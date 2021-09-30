@@ -1,0 +1,291 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This CloudFormation template will create the API Gateway, Lambda and S3.
+
+# The Metadata field serves to make the parameters user-friendly.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Name of Resources"
+        Parameters:
+          - Name
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - SubnetIds
+          - SecurityGroupId
+      -
+        Label:
+          default: "Lambda"
+        Parameters:
+          - LambdaRuntime
+          - NameofBucketApplication
+          - NameofFileApplication
+      -
+        Label:
+          default: "API Gateway"
+        Parameters:
+          - CreationVCPEndpoint
+          - IDVPCEndpoint
+          - ResourcePolicy
+      -
+        Label:
+          default: "S3"
+        Parameters:
+          - BucketS3
+          - NameBucketS3
+
+    ParameterLabels:
+      Name:
+        default: "Name"      
+      VpcId:
+        default: "VPC"
+      SubnetIds:
+        default: "Subnet"
+      SecurityGroupId:
+        default: "Security Group"
+      LambdaRuntime:
+        default: "Runtime"
+      NameofBucketApplication:
+        default: "Bucket"
+      NameofFileApplication:
+        default: "File"
+      CreationVCPEndpoint:
+        default: "VPCE for your API Gateway"
+      IDVPCEndpoint:
+        default: "VPC Endpoint"
+      ResourcePolicy:
+        default: "VPC Resource Policy"
+      BucketS3:
+        default: "Do you want to create an S3 bucket?"
+      NameBucketS3:
+        default: "If yes, create a unique name for Bucket S3"
+
+# The Parameters block is the sector where the user places the variables.
+
+Parameters:
+
+  Name:
+    Description: 'This will be the name of your API Gateway, Lambda.'
+    Type: String
+
+  LambdaRuntime:
+    Type: String
+    Description: 'What is your application runtime?'
+    AllowedValues: [nodejs14.x, nodejs12.x, nodejs10.x, python3.9, python3.8, python3.7, python3.6, python2.7, ruby2.7, ruby2.5, java11, java8.al2, java8, go1.x, dotnetcore3.1, dotnetcore2.1, provided.al2, provided]
+
+  NameofBucketApplication:
+    Type: String
+    Description: 'Which bucket is your application in?'
+
+  NameofFileApplication:
+    Type: String
+    Description: "Enter your application's .zip file."
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 'Select the VPC ID for the VPC endpoint.' 
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: 'Select the subnets to associate with the VPC endpoint.'
+
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: 'Select security group to associate with the VPC endpoint.'
+
+  CreationVCPEndpoint:
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'If you want to create a VPC Endpoint choose true, if not choose false.'
+
+  IDVPCEndpoint:
+    Type: String
+    Description: 'Write the VPCE only if you checked the option sign as false.'
+
+  ResourcePolicy:
+    Type: String
+    Description: 'Input the VPC Endpoint of your origin.'
+
+  BucketS3:
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'If you want to create an S3 bucket choose true, if not choose false.'
+
+  NameBucketS3:
+    Type: String
+    Description: 'Write the name of Bucket S3 only if you checked the option sign as true.'
+
+# Conditions are the decision parameters of the template.
+
+Conditions:
+  CreationVCPEndpointSelected: !Equals [!Ref CreationVCPEndpoint, true]
+  CreationS3Bucket: !Equals [!Ref BucketS3, true]
+
+Resources:
+
+# LambdaIAM (permission) and LambdaFunction are part of the creation of Lambda.
+
+  LambdaIAM:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - !Join 
+          - ''
+          - - 'arn:'
+            - !Ref 'AWS::Partition'
+            - ':iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref Name
+      Runtime: !Ref LambdaRuntime
+      Code:
+        S3Bucket: !Ref NameofBucketApplication
+        S3Key: !Ref NameofFileApplication
+      Handler: python_test.lambda_handler
+      MemorySize: 128
+      Timeout: 10
+      Role: !GetAtt 
+        - LambdaIAM
+        - Arn
+
+# Creation of VPC Endpoint.
+
+  VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreationVCPEndpointSelected
+    Properties:
+      ServiceName: !Join
+        - ''
+        - - com.amazonaws.
+          - !Ref 'AWS::Region'
+          - .execute-api
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+        - !Ref SecurityGroupId
+      SubnetIds: 
+        Ref: SubnetIds
+      VpcEndpointType: Interface
+      VpcId: 
+        Ref: VpcId
+
+# APIGateway, APIGatewayResource, APIGatewayDeploy, APIGatewayStage, APIGatewayMethod are the components to create the API Gateway.
+
+  APIGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Ref Name
+      EndpointConfiguration:
+        Types:
+          - PRIVATE
+        VpcEndpointIds:
+          - !If [CreationVCPEndpointSelected, !Ref VPCEndpoint, !Ref IDVPCEndpoint]      
+      Policy:
+        Statement:
+          - Action: 'execute-api:Invoke'
+            Effect: Allow
+            Principal: '*'
+            Resource: 'execute-api:/*'
+          - Action: 'execute-api:Invoke'
+            Condition:
+              StringNotEquals:
+                'aws:SourceVpce': !Ref ResourcePolicy
+            Effect: Deny
+            Principal: '*'
+            Resource: 'execute-api:/*'
+        Version: 2012-10-17
+
+  ApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt 
+        - APIGateway
+        - RootResourceId
+      PathPart: '{proxy+}'
+      RestApiId: !Ref APIGateway
+
+  APIGatewayDeploy:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref APIGateway
+    DependsOn:
+      - APIGatewayMethod
+      - ApiGatewayResource
+
+  APIGatewayStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref APIGateway
+      DeploymentId: !Ref APIGatewayDeploy
+      StageName: dev
+
+# LambdaPermission is the policy that connects Function with API Gateway.
+
+  LambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt 
+        - LambdaFunction
+        - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join 
+        - ''
+        - - 'arn:'
+          - !Ref 'AWS::Partition'
+          - ':execute-api:'
+          - !Ref 'AWS::Region'
+          - ':'
+          - !Ref 'AWS::AccountId'
+          - ':'
+          - !Ref APIGateway
+          - /*/*/*
+
+  APIGatewayMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      HttpMethod: ANY
+      ResourceId: !Ref ApiGatewayResource
+      RestApiId: !Ref APIGateway
+      AuthorizationType: NONE       
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels: { "application/json": "Empty" }
+      Integration:
+        IntegrationResponses:        
+          - StatusCode: 200 
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Join 
+          - ''
+          - - 'arn:'
+            - !Ref 'AWS::Partition'
+            - ':apigateway:'
+            - !Ref 'AWS::Region'
+            - ':lambda:path/2015-03-31/functions/'
+            - !GetAtt 
+              - LambdaFunction
+              - Arn
+            - /invocations
+
+# S3 bucket creation.
+
+  S3:
+    Type: AWS::S3::Bucket
+    Condition: CreationS3Bucket
+    Properties:
+      BucketName: !If [CreationS3Bucket, !Ref NameBucketS3, !Ref AWS::NoValue]  

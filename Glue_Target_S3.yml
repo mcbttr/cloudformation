@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This CloudFormation template will create the Glue.
+
+# The Metadata field serves to make the parameters user-friendly.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Name"
+        Parameters:
+          - GlueService
+      -
+        Label:
+          default: "Glue - Network Configuration"
+        Parameters:
+          - VpcID
+          - SubnetId
+          - SecurityGroup
+      -
+        Label:
+          default: "Glue - Database Inbound Connection"
+        Parameters:
+          - JDBCString
+          - JDBCUser
+          - JDBCPassword
+      -
+        Label:
+          default: "S3 - VPC Endpoint"
+        Parameters: 
+          - CreationVCPEndpoint
+          - RouteTable
+      -
+        Label:
+          default: "S3 - Outbound connection"
+        Parameters:
+          - BucketS3
+          - NameBucketS3
+          - ExistNameBucketS3
+        
+    ParameterLabels:
+      GlueService:
+        default: "Enter your Glue's name"
+      VpcID:
+        default: "VPC"
+      SubnetId:
+        default: "Subnet"
+      SecurityGroup:
+        default: "SecurityGroup"
+      JDBCString:
+        default: "Database connection string"
+      JDBCUser:
+        default: "Database User"
+      JDBCPassword:
+        default: "Database Password" 
+      BucketS3:
+        default: "Do you want to create an S3 bucket?"
+      NameBucketS3:
+        default: "If yes, create a unique name for Bucket S3"
+      ExistNameBucketS3:
+        default: "If not, enter your S3 bucket name"
+      CreationVCPEndpoint:
+        default: "Do you want to create a VPC Endpoint to connect S3 to Glue?"
+      RouteTable:
+        default: "Route Table"
+
+# The Parameters block is the sector where the user places the variables.
+
+Parameters:
+  GlueService:
+    Type: String
+
+  VpcID:
+    Description: "Choose the VPC"
+    Type: AWS::EC2::VPC::Id
+  
+  SecurityGroup:
+    Description: 'Choose the Security Group'
+    Type: AWS::EC2::SecurityGroup::Id
+  
+  SubnetId:
+    Description: 'Choose the Subnet ID'
+    Type: String
+  
+  JDBCString:  
+    Description: 'Enter the JDBC String'
+    Type: String
+    Default: 'jdbc:protocol://host:port/databasename'
+  
+  JDBCUser:  
+    Description: 'Enter the Database user'
+    Type: String
+  
+  JDBCPassword:  
+    Description: 'Enter the Database Password'
+    Type: String
+
+  NameBucketS3:
+    Type: String
+    Description: 'Create a unique name.'
+
+  BucketS3:
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'If you want to create an S3 bucket choose true, if not choose false.'
+
+  ExistNameBucketS3:
+    Type: String
+    Description: 'Input the name of the existing bucket.'
+
+  CreationVCPEndpoint:
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'If you want to create a VPC Endpoint choose true, if not choose false.'
+
+  RouteTable:
+    Type: String
+    Description: 'Only write the Route Table if the option above is yes.'
+
+# Conditions are the decision parameters of the template.
+
+Conditions:
+  CreationVCPEndpointSelected: !Equals [!Ref CreationVCPEndpoint, true]
+  CreationS3Bucket: !Equals [!Ref BucketS3, true]
+
+Resources:
+
+# Creation of permission role for services.
+
+  IAM:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: !Ref GlueService
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
+
+# For Glue to connect to S3 it is necessary to have a VPC Endpoint.
+
+  VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreationVCPEndpointSelected
+    Properties:
+      ServiceName: !Join
+        - ''
+        - - com.amazonaws.
+          - !Ref 'AWS::Region'
+          - .s3
+      VpcEndpointType: Gateway
+      VpcId: 
+        Ref: VpcID
+      RouteTableIds:
+        - !Ref RouteTable
+
+# Database, Connections and Crawler are the components for creating Glue.
+
+  Database:
+    Type: AWS::Glue::Database
+    Properties:
+      DatabaseInput:
+        Name: !Ref GlueService
+      CatalogId: !Ref AWS::AccountId
+
+  Connections:
+    Type: AWS::Glue::Connection
+    Properties:
+      CatalogId: !Ref AWS::AccountId 
+      ConnectionInput: 
+        ConnectionType: 'JDBC'
+        PhysicalConnectionRequirements:
+          SecurityGroupIdList: 
+            - !Ref SecurityGroup
+          SubnetId: !Ref SubnetId 
+        ConnectionProperties: {
+          'JDBC_CONNECTION_URL': !Ref JDBCString,
+          'USERNAME': !Ref JDBCUser,
+          'PASSWORD': !Ref JDBCPassword,
+          'JDBC_ENFORCE_SSL': false
+        }
+        Name: !Ref GlueService
+ 
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Ref GlueService
+      Role: !GetAtt IAM.Arn
+      DatabaseName: !Ref Database
+      Targets:
+        S3Targets:
+          - Path: !If [CreationS3Bucket, !Ref NameBucketS3, !Ref ExistNameBucketS3] 
+
+# Creation or not of bucket S3.
+
+  S3:
+    Type: AWS::S3::Bucket
+    Condition: CreationS3Bucket
+    Properties:
+      BucketName: !If [CreationS3Bucket, !Ref NameBucketS3, !Ref ExistNameBucketS3] 

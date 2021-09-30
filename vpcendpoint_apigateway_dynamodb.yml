@@ -1,0 +1,212 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This CloudFormation template will create the API Gateway and DynamoDb.
+
+# The Metadata field serves to make the parameters user-friendly.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Name of Resources"
+        Parameters:
+          - Name
+      -
+        Label:
+          default: "Network Configuration"
+        Parameters:
+          - VpcId
+          - SubnetIds
+          - SecurityGroupId
+      -
+        Label:
+          default: "API Gateway"
+        Parameters:
+          - CreationVCPEndpoint
+          - IDVPCEndpoint
+          - ResourcePolicy
+
+    ParameterLabels:
+      Name:
+        default: "Name"      
+      VpcId:
+        default: "VPC"
+      SubnetIds:
+        default: "Subnet"
+      SecurityGroupId:
+        default: "Security Group"
+      CreationVCPEndpoint:
+        default: "VPCE for your API Gateway"
+      IDVPCEndpoint:
+        default: "VPC Endpoint"
+      ResourcePolicy:
+        default: "VPC Resource Policy"
+
+# The Parameters block is the sector where the user places the variables.
+
+Parameters:
+  Name:
+    Type: String
+    Description: 'This will be the name of your API Gateway and DynamoDb.'
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 'Select the VPC ID for the VPC endpoint.' 
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: 'Select the subnets to associate with the VPC endpoint.'
+
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: 'Select security group to associate with the VPC endpoint.'
+
+  CreationVCPEndpoint:
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'If you want to create a VPC Endpoint choose true, if not choose false.'
+
+  IDVPCEndpoint:
+    Type: String
+    Description: 'Write the VPCE only if you checked the option sign as false.'
+
+  ResourcePolicy:
+    Type: String
+    Description: 'Input the VPC Endpoint of your origin.'
+
+# Conditions are the decision parameters of the template.
+
+Conditions:
+  CreationVCPEndpointSelected: !Equals [!Ref CreationVCPEndpoint, true]
+
+Resources:
+  
+# APIGatewayRole is the permission given to APIGateway to access DynamoDb.
+
+  APIGatewayRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+      Policies:
+        - PolicyName: APIGatewayDynamoDBPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "dynamodb:PutItem"
+                  - "dynamodb:UpdateItem"
+                  - "dynamodb:DeleteItem"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:Scan"
+                Resource: !Sub
+                  - '${varTableArn}*'
+                  - varTableArn: !GetAtt DynamoDBTable.Arn
+
+# Creation of VPC Endpoint.
+
+  VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreationVCPEndpointSelected
+    Properties:
+      ServiceName: !Join
+        - ''
+        - - com.amazonaws.
+          - !Ref 'AWS::Region'
+          - .execute-api
+      PrivateDnsEnabled: true
+      SecurityGroupIds: 
+        - !Ref SecurityGroupId
+      SubnetIds: 
+        Ref: SubnetIds
+      VpcEndpointType: Interface
+      VpcId: 
+        Ref: VpcId
+
+# APIGateway, APIGatewayResource, APIGatewayDeploy and APIGatewayMethod are the components to create the API Gateway.
+
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Ref Name
+      EndpointConfiguration:
+        Types:
+          - PRIVATE
+        VpcEndpointIds:
+          - !If [CreationVCPEndpointSelected, !Ref VPCEndpoint, !Ref IDVPCEndpoint]   
+      Policy:
+        Statement:
+          - Action: 'execute-api:Invoke'
+            Effect: Allow
+            Principal: '*'
+            Resource: 'execute-api:/*'
+          - Action: 'execute-api:Invoke'
+            Condition:
+              StringNotEquals:
+                'aws:SourceVpce': !Ref ResourcePolicy
+            Effect: Deny
+            Principal: '*'
+            Resource: 'execute-api:/*'
+        Version: 2012-10-17
+
+  ApiGatewayResource:
+    Type: 'AWS::ApiGateway::Resource'
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: dev
+  
+  APIGatewayMethod:
+    Type: 'AWS::ApiGateway::Method'
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiGatewayResource
+      HttpMethod: ANY
+      ApiKeyRequired: true
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS
+        Credentials: !GetAtt APIGatewayRole.Arn
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:dynamodb:action/PutItem'
+        PassthroughBehavior: WHEN_NO_TEMPLATES
+        IntegrationResponses:
+          - StatusCode: '200'
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: '200'
+  
+  APIGatewayDeploy:
+    Type: 'AWS::ApiGateway::Deployment'
+    DependsOn:
+      - APIGatewayMethod
+      - ApiGatewayResource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: dev
+
+# Creation of the DynamoDb table.
+
+  DynamoDBTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: !Ref Name
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 100
+        WriteCapacityUnits: 100

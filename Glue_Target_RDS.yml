@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This CloudFormation template will create the Glue.
+
+# The Metadata field serves to make the parameters user-friendly.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Name"
+        Parameters:
+          - GlueService
+      -
+        Label:
+          default: "Glue - Network Configuration"
+        Parameters:
+          - VpcID
+          - SubnetId
+          - SecurityGroup
+      -
+        Label:
+          default: "Glue - Database Inbound Connection"
+        Parameters:
+          - JDBCString
+          - JDBCUser
+          - JDBCPassword
+      -
+        Label:
+          default: "Glue - Crawler"
+        Parameters:
+          - Schema
+        
+    ParameterLabels:
+      GlueService:
+        default: "Enter your Glue's name"
+      VpcID:
+        default: "VPC"
+      SubnetId:
+        default: "Subnet"
+      SecurityGroup:
+        default: "SecurityGroup"
+      JDBCString:
+        default: "Database connection string"
+      JDBCUser:
+        default: "Database User"
+      JDBCPassword:
+        default: "Database Password"
+      Schema:
+        default: "Input schema your DBMS"
+
+Parameters:
+  GlueService:
+    Type: String
+
+  VpcID:
+    Description: "Choose the VPC"
+    Type: AWS::EC2::VPC::Id
+  
+  SecurityGroup:
+    Description: 'Choose the Security Group'
+    Type: AWS::EC2::SecurityGroup::Id
+  
+  SubnetId:
+    Description: 'Choose the Subnet ID'
+    Type: String
+  
+  JDBCString:  
+    Description: 'Input the JDBC String'
+    Type: String
+    Default: 'jdbc:protocol://host:port/databasename'
+  
+  JDBCUser:  
+    Description: 'Enter the Database user'
+    Type: String
+  
+  JDBCPassword:  
+    Description: 'Enter the Database Password'
+    Type: String
+
+  Schema:
+    Description: 'Input your path'
+    Type: String
+    Default: MyDatabase/%
+
+Resources:
+
+# Creation of permission role for services.  
+  
+  IAM:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+                - "rds.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: !Ref GlueService
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
+
+# Database, Connections and Crawler are the components for creating Glue.
+
+  Database:
+    Type: AWS::Glue::Database
+    Properties:
+      DatabaseInput:
+        Name: !Ref GlueService
+      CatalogId: !Ref AWS::AccountId
+
+  Connections:
+    Type: AWS::Glue::Connection
+    Properties:
+      CatalogId: !Ref AWS::AccountId 
+      ConnectionInput: 
+        ConnectionType: 'JDBC'
+        PhysicalConnectionRequirements:
+          SecurityGroupIdList: 
+            - !Ref SecurityGroup
+          SubnetId: !Ref SubnetId 
+        ConnectionProperties: {
+          'JDBC_CONNECTION_URL': !Ref JDBCString,
+          'USERNAME': !Ref JDBCUser,
+          'PASSWORD': !Ref JDBCPassword,
+          'JDBC_ENFORCE_SSL': false
+        }
+        Name: !Ref GlueService
+ 
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Ref GlueService
+      Role: !GetAtt IAM.Arn
+      DatabaseName: !Ref Database
+      Targets:
+        JdbcTargets:
+          - ConnectionName: !Ref GlueService
+            Path: !Ref Schema

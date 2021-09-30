@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This CloudFormation template will create the Glue.
+
+# The Metadata field serves to make the parameters user-friendly.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Name"
+        Parameters:
+          - GlueService
+      -
+        Label:
+          default: "Glue - Network Configuration"
+        Parameters:
+          - VpcID
+          - SubnetId
+          - SecurityGroup
+      -
+        Label:
+          default: "Glue - Database Inbound Connection"
+        Parameters:
+          - JDBCString
+          - JDBCUser
+          - JDBCPassword
+      -  
+        Label:
+          default: "DynamoDB - Outbound connection"
+        Parameters:
+          - DynamoDB
+          - NameDynamoDB
+          - DynamoDBExist  
+        
+    ParameterLabels:
+      GlueService:
+        default: "Enter your Glue's name"
+      VpcID:
+        default: "VPC"
+      SubnetId:
+        default: "Subnet"
+      SecurityGroup:
+        default: "SecurityGroup"
+      JDBCString:
+        default: "Database connection string"
+      JDBCUser:
+        default: "Database User"
+      JDBCPassword:
+        default: "Database Password" 
+      DynamoDB:
+        default: "Do you want to create a DynamoDB table?"
+      NameDynamoDB:
+        default: "Type the name of your new DynamoDb table"
+      DynamoDBExist:
+        default: "Type the name of the existing DynamoDB table"      
+
+# The Parameters block is the sector where the user places the variables.
+
+Parameters:
+  GlueService:
+    Type: String
+
+  VpcID:
+    Description: "Choose the VPC"
+    Type: AWS::EC2::VPC::Id
+  
+  SecurityGroup:
+    Description: 'Choose the Security Group'
+    Type: AWS::EC2::SecurityGroup::Id
+  
+  SubnetId:
+    Description: 'Choose the Subnet ID'
+    Type: String
+  
+  JDBCString:  
+    Description: 'Enter the JDBC String'
+    Type: String
+    Default: 'jdbc:protocol://host:port/databasename'
+  
+  JDBCUser:  
+    Description: 'Enter the Database user'
+    Type: String
+  
+  JDBCPassword:  
+    Description: 'Enter the Database Password'
+    Type: String
+
+  DynamoDB:
+    Type: String
+    AllowedValues: [true, false]
+    Description: "Select true for yes or false for no."
+
+  NameDynamoDB:
+    Type: String
+    Description: 'Type the name of your new table.'
+
+  DynamoDBExist:
+    Type: String
+    Description: 'Type the name of the existing table.'
+
+Conditions:
+  CreationDynamoDbSeletected: !Equals [!Ref DynamoDB, true]
+
+Resources:
+
+# Creation of permission role for services.  
+  
+  IAM:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: !Ref GlueService
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
+
+# Database, Connections and Crawler are the components for creating Glue.
+
+  Database:
+    Type: AWS::Glue::Database
+    Properties:
+      DatabaseInput:
+        Name: !Ref GlueService
+      CatalogId: !Ref AWS::AccountId
+
+  Connections:
+    Type: AWS::Glue::Connection
+    Properties:
+      CatalogId: !Ref AWS::AccountId 
+      ConnectionInput: 
+        ConnectionType: 'JDBC'
+        PhysicalConnectionRequirements:
+          SecurityGroupIdList: 
+            - !Ref SecurityGroup
+          SubnetId: !Ref SubnetId 
+        ConnectionProperties: {
+          'JDBC_CONNECTION_URL': !Ref JDBCString,
+          'USERNAME': !Ref JDBCUser,
+          'PASSWORD': !Ref JDBCPassword,
+          'JDBC_ENFORCE_SSL': false
+        }
+        Name: !Ref GlueService
+ 
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Ref GlueService
+      Role: !GetAtt IAM.Arn
+      DatabaseName: !Ref Database
+      Targets:
+        DynamoDBTargets:
+          - Path: !If [CreationDynamoDbSeletected, !Ref NameDynamoDB, !Ref DynamoDBExist]
+
+# Creation or not DynamoDB Table.
+
+  DynamoDBTable:
+    Type: 'AWS::DynamoDB::Table'
+    Condition: CreationDynamoDbSeletected
+    Properties:
+      TableName: !Ref GlueService
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 100
+        WriteCapacityUnits: 100
