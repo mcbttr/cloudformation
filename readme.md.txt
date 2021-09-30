@@ -1,1 +1,0 @@
-Repositório para stacks do CloudFormation
