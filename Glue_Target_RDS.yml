@@ -9,11 +9,6 @@ Metadata:
     ParameterGroups:
       -
         Label:
-          default: "Name"
-        Parameters:
-          - GlueService
-      -
-        Label:
           default: "Glue - Network Configuration"
         Parameters:
           - VpcID
@@ -23,36 +18,50 @@ Metadata:
         Label:
           default: "Glue - Database Inbound Connection"
         Parameters:
-          - JDBCString
-          - JDBCUser
-          - JDBCPassword
+          - GlueService1
+          - JDBCString1
+          - JDBCUser1
+          - JDBCPassword1
+          - Schema1
       -
         Label:
-          default: "Glue - Crawler"
+          default: "Glue - Database Outbound Connection"
         Parameters:
-          - Schema
+          - GlueService2
+          - JDBCString2
+          - JDBCUser2
+          - JDBCPassword2
+          - Schema2
         
     ParameterLabels:
-      GlueService:
-        default: "Enter your Glue's name"
       VpcID:
         default: "VPC"
       SubnetId:
         default: "Subnet"
       SecurityGroup:
         default: "SecurityGroup"
-      JDBCString:
+      GlueService1:
+        default: "Enter your Database's name"
+      GlueService2:
+        default: "Enter your Database's name"        
+      JDBCString1:
         default: "Database connection string"
-      JDBCUser:
+      JDBCUser1:
         default: "Database User"
-      JDBCPassword:
+      JDBCPassword1:
         default: "Database Password"
-      Schema:
+      Schema1:
+        default: "Input schema your DBMS"
+      JDBCString2:
+        default: "Database connection string"
+      JDBCUser2:
+        default: "Database User"
+      JDBCPassword2:
+        default: "Database Password"
+      Schema2:
         default: "Input schema your DBMS"
 
 Parameters:
-  GlueService:
-    Type: String
 
   VpcID:
     Description: "Choose the VPC"
@@ -65,21 +74,45 @@ Parameters:
   SubnetId:
     Description: 'Choose the Subnet ID'
     Type: String
-  
-  JDBCString:  
+
+  GlueService1:
+    Type: String
+
+  GlueService2:
+    Type: String
+
+  JDBCString1:  
     Description: 'Input the JDBC String'
     Type: String
     Default: 'jdbc:protocol://host:port/databasename'
   
-  JDBCUser:  
+  JDBCUser1:  
     Description: 'Enter the Database user'
     Type: String
   
-  JDBCPassword:  
+  JDBCPassword1:  
     Description: 'Enter the Database Password'
     Type: String
 
-  Schema:
+  Schema1:
+    Description: 'Input your path'
+    Type: String
+    Default: MyDatabase/%
+
+  JDBCString2:  
+    Description: 'Input the JDBC String'
+    Type: String
+    Default: 'jdbc:protocol://host:port/databasename'
+  
+  JDBCUser2:  
+    Description: 'Enter the Database user'
+    Type: String
+  
+  JDBCPassword2:  
+    Description: 'Enter the Database Password'
+    Type: String
+
+  Schema2:
     Description: 'Input your path'
     Type: String
     Default: MyDatabase/%
@@ -105,7 +138,7 @@ Resources:
       Path: "/"
       Policies:
         -
-          PolicyName: !Ref GlueService
+          PolicyName: !Ref GlueService1
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -116,14 +149,21 @@ Resources:
 
 # Database, Connections and Crawler are the components for creating Glue.
 
-  Database:
+  Database1:
     Type: AWS::Glue::Database
     Properties:
       DatabaseInput:
-        Name: !Ref GlueService
+        Name: !Ref GlueService1
       CatalogId: !Ref AWS::AccountId
 
-  Connections:
+  Database2:
+    Type: AWS::Glue::Database
+    Properties:
+      DatabaseInput:
+        Name: !Ref GlueService2
+      CatalogId: !Ref AWS::AccountId
+
+  Connections1:
     Type: AWS::Glue::Connection
     Properties:
       CatalogId: !Ref AWS::AccountId 
@@ -134,20 +174,49 @@ Resources:
             - !Ref SecurityGroup
           SubnetId: !Ref SubnetId 
         ConnectionProperties: {
-          'JDBC_CONNECTION_URL': !Ref JDBCString,
-          'USERNAME': !Ref JDBCUser,
-          'PASSWORD': !Ref JDBCPassword,
+          'JDBC_CONNECTION_URL': !Ref JDBCString1,
+          'USERNAME': !Ref JDBCUser1,
+          'PASSWORD': !Ref JDBCPassword1,
           'JDBC_ENFORCE_SSL': false
         }
-        Name: !Ref GlueService
+        Name: !Ref GlueService1
+
+  Connections2:
+    Type: AWS::Glue::Connection
+    Properties:
+      CatalogId: !Ref AWS::AccountId 
+      ConnectionInput: 
+        ConnectionType: 'JDBC'
+        PhysicalConnectionRequirements:
+          SecurityGroupIdList: 
+            - !Ref SecurityGroup
+          SubnetId: !Ref SubnetId 
+        ConnectionProperties: {
+          'JDBC_CONNECTION_URL': !Ref JDBCString2,
+          'USERNAME': !Ref JDBCUser2,
+          'PASSWORD': !Ref JDBCPassword2,
+          'JDBC_ENFORCE_SSL': false
+        }
+        Name: !Ref GlueService2
  
-  Crawler:
+  Crawler1:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Ref GlueService
+      Name: !Ref GlueService1
       Role: !GetAtt IAM.Arn
-      DatabaseName: !Ref Database
+      DatabaseName: !Ref GlueService1
       Targets:
         JdbcTargets:
-          - ConnectionName: !Ref GlueService
-            Path: !Ref Schema
+          - ConnectionName: !Ref GlueService1
+            Path: !Ref Schema1
+
+  Crawler2:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Ref GlueService2
+      Role: !GetAtt IAM.Arn
+      DatabaseName: !Ref GlueService2
+      Targets:
+        JdbcTargets:
+          - ConnectionName: !Ref GlueService2
+            Path: !Ref Schema2

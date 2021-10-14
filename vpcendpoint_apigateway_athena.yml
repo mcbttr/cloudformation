@@ -98,21 +98,14 @@ Resources:
               Service:
                 - apigateway.amazonaws.com
       Policies:
-        - PolicyName: APIGatewayDynamoDBPolicy
+        - PolicyName: APIGatewayAthenaPolicy
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
-                  - "dynamodb:PutItem"
-                  - "dynamodb:UpdateItem"
-                  - "dynamodb:DeleteItem"
-                  - "dynamodb:GetItem"
-                  - "dynamodb:Scan"
-                  - "dynamodb:Query"
-                Resource: !Sub
-                  - '${varTableArn}*'
-                  - varTableArn: !GetAtt DynamoDBTable.Arn
+                  - "athena:*"
+                Resource: "*"
 
 # Creation of VPC Endpoint.
 
@@ -179,7 +172,7 @@ Resources:
         Type: AWS
         Credentials: !GetAtt APIGatewayRole.Arn
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:dynamodb:action/PutItem'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:athena:action/GetQueryResults'
         PassthroughBehavior: WHEN_NO_TEMPLATES
         IntegrationResponses:
           - StatusCode: '200'
@@ -196,19 +189,3 @@ Resources:
     Properties:
       RestApiId: !Ref ApiGateway
       StageName: dev
-
-# Creation of the DynamoDb table.
-
-  DynamoDBTable:
-    Type: 'AWS::DynamoDB::Table'
-    Properties:
-      TableName: !Ref Name
-      AttributeDefinitions:
-        - AttributeName: id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: id
-          KeyType: HASH
-      ProvisionedThroughput:
-        ReadCapacityUnits: 100
-        WriteCapacityUnits: 100

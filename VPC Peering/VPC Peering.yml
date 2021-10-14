@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Create a VPC and a VPC Peering connection using the PeerRole to accept.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "VPC Peering"
+        Parameters:
+          - Name
+          - RequesterVPCId
+          - PeerVPCAccountId
+          - PeerVPCId
+          - PeerRegion
+          - PeerRoleArn
+      -
+        Label:
+          default: "Route Table"
+        Parameters:
+          - RouteTable
+
+    ParameterLabels:
+      Name:
+        default: "Input name of VPC Peering"
+      RequesterVPCId:
+        default: "Input your VPC ID"
+      PeerVPCAccountId:
+        default: "Input peer account ID"
+      PeerVPCId:
+        default: "Input peer VPC ID"
+      PeerRegion:
+        default: "Input peer Region"
+      PeerRoleArn:
+        default: "Input the ARN that was passed"
+      RouteTable:
+        default: "Input your Route Table for Peering Connection"
+
+Parameters:  
+  Name:
+    Type: String
+  
+  RequesterVPCId:
+    Type: String
+    Default: vpc-xxxxxxxxxx
+  
+  PeerVPCAccountId:
+    Type: String
+  
+  PeerVPCId:
+    Type: String
+    Default: vpc-xxxxxxxxxx
+  
+  PeerRoleArn:
+    Type: String
+    Default: "arn:aws:iam::[account]:role/[rolename]"
+  
+  PeerRegion:
+    Type: String
+    AllowedValues: [us-east-2, us-east-1, us-west-1, us-west-2, af-south-1, ap-east-1, ap-south-1, ap-northeast-3, ap-northeast-2, ap-southeast-1, ap-southeast-2, ap-northeast-1, ca-central-1, cn-north-1, cn-northwest-1, eu-central-1, eu-west-1, eu-west-2, eu-west-3, eu-north-1, eu-south-1, me-south-1, sa-east-1, us-gov-west-1, us-gov-east-1]
+  
+  RouteTable:
+    Type: String
+    Default: rtb-xxxxxxxxxx
+
+Resources:
+  PeeringConnections:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      VpcId: !Ref RequesterVPCId
+      PeerVpcId: !Ref PeerVPCId
+      PeerOwnerId: !Ref PeerVPCAccountId
+      PeerRoleArn: !Ref PeerRoleArn
+      PeerRegion: !Ref PeerRegion
+      Tags:
+        - Key: Name
+        - Value: !Ref Name
+
+  RouteTable1:
+    Type: AWS::EC2::Route
+    Properties: 
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 1ª vpcid
+      VpcPeeringConnectionId: !Ref PeeringConnections
+
+  RouteTable2:
+    Type: AWS::EC2::Route
+    Properties: 
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 2ª vpcid
+      VpcPeeringConnectionId: !Ref PeeringConnections

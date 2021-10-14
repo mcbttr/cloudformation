@@ -71,7 +71,7 @@ Metadata:
 Parameters:
 
   Name:
-    Description: 'This will be the name of your API Gateway, Lambda and RDS.'
+    Description: "This will be the name of your API Gateway, Lambda and RDS. First character must be a letter. Can't contain two consecutive hyphens. Can't end with a hyphen."
     Type: String
 
   LambdaRuntime:
@@ -95,7 +95,7 @@ Parameters:
     Default: 5.7
 
   MasterUserPassword:
-    Description: Write down what your RDS admin password will be.
+    Description: "At least 8 printable ASCII characters. Can't contain any of the following: / (slash), '(single quote), (double quote)."
     Type: String
 
   VpcId:
@@ -121,8 +121,8 @@ Parameters:
 
   ResourcePolicy:
     Type: String
-    Description: 'Select source VPCE.'
-    Default: vpce-xxxxxxxxxxxxxxx
+    Description: 'Input the VPC Endpoint of your origin, Sensedia=vpce-07516d43e5467b5f9'
+    Default: 'vpce-07516d43e5467b5f9'
 
 # Conditions are the decision parameters of the template.
 
