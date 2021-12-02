@@ -13,7 +13,6 @@ Metadata:
         Parameters:
           - VpcID
           - SubnetId
-          - SecurityGroup
       -
         Label:
           default: "Glue - Database Inbound Connection"
@@ -38,8 +37,6 @@ Metadata:
         default: "VPC"
       SubnetId:
         default: "Subnet"
-      SecurityGroup:
-        default: "SecurityGroup"
       GlueService1:
         default: "Enter your Database's name"
       GlueService2:
@@ -64,15 +61,11 @@ Metadata:
 Parameters:
 
   VpcID:
-    Description: "Choose the VPC"
+    Description: "Select the VPC ID for the VPC endpoint."
     Type: AWS::EC2::VPC::Id
   
-  SecurityGroup:
-    Description: 'Choose the Security Group'
-    Type: AWS::EC2::SecurityGroup::Id
-  
   SubnetId:
-    Description: 'Choose the Subnet ID'
+    Description: 'Choose the Subnet ID from the chosen VPC'
     Type: String
 
   GlueService1:
@@ -147,6 +140,30 @@ Resources:
                 Action: "*"
                 Resource: "*"
 
+# Creation Security Group
+
+  SecurityGroupGlue:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VpcID
+      GroupDescription: Security Group for Glue
+  InboundRule:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !GetAtt SecurityGroupGlue.GroupId
+      IpProtocol: -1
+      FromPort: -1
+      ToPort: -1
+      SourceSecurityGroupId: !GetAtt SecurityGroupGlue.GroupId
+  OutboundRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !GetAtt SecurityGroupGlue.GroupId
+      IpProtocol: -1
+      FromPort: -1
+      ToPort: -1
+      CidrIp: 0.0.0.0/0
+
 # Database, Connections and Crawler are the components for creating Glue.
 
   Database1:
@@ -171,7 +188,7 @@ Resources:
         ConnectionType: 'JDBC'
         PhysicalConnectionRequirements:
           SecurityGroupIdList: 
-            - !Ref SecurityGroup
+            - !GetAtt SecurityGroupGlue.GroupId
           SubnetId: !Ref SubnetId 
         ConnectionProperties: {
           'JDBC_CONNECTION_URL': !Ref JDBCString1,
@@ -189,7 +206,7 @@ Resources:
         ConnectionType: 'JDBC'
         PhysicalConnectionRequirements:
           SecurityGroupIdList: 
-            - !Ref SecurityGroup
+            - !GetAtt SecurityGroupGlue.GroupId
           SubnetId: !Ref SubnetId 
         ConnectionProperties: {
           'JDBC_CONNECTION_URL': !Ref JDBCString2,

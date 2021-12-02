@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-Description: This CloudFormation template will create the API Gateway, Lambda and S3.
+Description: This CloudFormation template will create the API Gateway, Lambda, Glue and Athena.
 
 # The Metadata field serves to make the parameters user-friendly.
 
@@ -21,26 +21,36 @@ Metadata:
           - SecurityGroupId
       -
         Label:
-          default: "Lambda"
+          default: "API Gateway"
         Parameters:
+          - CreationVCPEndpointExecuteAPI
+          - IDVPCEndpoint
+          - ResourcePolicy
+      -
+        Label:
+          default: "Lambda"
+        Parameters: 
           - LambdaRuntime
           - NameofBucketApplication
           - NameofFileApplication
       -
         Label:
-          default: "API Gateway"
+          default: "Glue"
         Parameters:
-          - CreationVCPEndpoint
-          - IDVPCEndpoint
-          - ResourcePolicy
+          - CreationVCPEndpointExecuteS3
+          - RouteTable
       -
         Label:
-          default: "Secrets Manager"
+          default: "Athena - Inbound data from S3"
         Parameters:
-          - CreationSecretsManager
-          - SecretUser
-          - SecretPassword
-          - ARNSecretsManager
+          - InboundS3
+      -
+        Label:
+          default: "Athena - Outputting data to S3"
+        Parameters:
+          - BucketS3
+          - NameBucketS3
+          - S3URI      
 
     ParameterLabels:
       Name:
@@ -52,32 +62,38 @@ Metadata:
       SecurityGroupId:
         default: "Security Group"
       LambdaRuntime:
-        default: "Runtime"
+        default: "Lambda - Runtime"
       NameofBucketApplication:
         default: "Bucket"
       NameofFileApplication:
         default: "File"
-      CreationVCPEndpoint:
+      CreationVCPEndpointExecuteAPI:
         default: "VPCE for your API Gateway"
+      CreationVCPEndpointExecuteS3:
+        default: "VPCE for your S3 Gateway"
       IDVPCEndpoint:
         default: "VPC Endpoint"
       ResourcePolicy:
-        default: "VPCE Resource Policy"
-      CreationSecretsManager:
-        default: "Do you need to create the Secrets Manager resource?"
-      SecretUser:
-        default: "Secret User"
-      SecretPassword:
-        default: "Secret Password"
-      ARNSecretsManager:
-        default: "What is the Secrets Manager ARN?"  
-
+        default: "VPC Resource Policy"
+      BucketS3:
+        default: "Do you want to create an S3 bucket?"
+      NameBucketS3:
+        default: "If yes, create a unique name for Bucket S3"
+      NameDataSource:
+        default: "Input the name of the data source"
+      S3URI:
+        default: "Input S3 URI"
+      RouteTable: 
+        default: "Route Table for VPCE S3 Gateway"
+      InboundS3:
+        default: "Input S3 URI"
+      
 # The Parameters block is the sector where the user places the variables.
 
 Parameters:
 
   Name:
-    Description: "This will be the name of your API Gateway, Lambda. First character must be a letter. Can't contain two consecutive hyphens. Can't end with a hyphen."
+    Description: "This will be the name of your API Gateway, Lambda, Glue and Athena. First character must be a letter. Can't contain two consecutive hyphens. Can't end with a hyphen."
     Type: String
 
   LambdaRuntime:
@@ -87,11 +103,11 @@ Parameters:
 
   NameofBucketApplication:
     Type: String
-    Description: 'Which bucket is your application in?'
+    Description: 'Which bucket is your function in?'
 
   NameofFileApplication:
     Type: String
-    Description: "Enter your application's .zip file."
+    Description: "Enter your function's .zip file."
 
   VpcId:
     Type: AWS::EC2::VPC::Id
@@ -105,10 +121,15 @@ Parameters:
     Type: AWS::EC2::SecurityGroup::Id
     Description: 'Select security group to associate with the VPC endpoint.'
 
-  CreationVCPEndpoint:
+  CreationVCPEndpointExecuteAPI:
     Type: String
     AllowedValues: [true, false]
-    Description: 'If you want to create a VPC Endpoint choose true, if not choose false.'
+    Description: 'If you want to create a VPC Endpoint Execute API choose true, if not choose false.'
+
+  CreationVCPEndpointExecuteS3:
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'If you want to create a VPC Endpoint S3 Gateway choose true, if not choose false.'
 
   IDVPCEndpoint:
     Type: String
@@ -119,30 +140,62 @@ Parameters:
     Description: 'Input the VPC Endpoint of your origin, Sensedia=vpce-07516d43e5467b5f9'
     Default: 'vpce-07516d43e5467b5f9'
 
-  CreationSecretsManager:
+  BucketS3:
     Type: String
     AllowedValues: [true, false]
-    Description: 'If you want to create a Secrets Manager choose true, if not choose false.'
+    Description: 'If you want to create an S3 bucket choose true, if not choose false.'
 
-  SecretUser:
+  NameBucketS3:
     Type: String
-    Description: Input your user of SAP Hana, if you choose true.
+    Description: 'Write the name of Bucket S3 only if you checked the option sign as true. To learn more about Bucket S3 naming rules, visit: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html'
+    AllowedPattern: ^[a-zA-Z0-9\-\.]*$
+    ConstraintDescription: "Bucket names can consist only of lowercase letters, numbers, dots (.), hyphens (-) and must begin and end with a letter or number."
 
-  SecretPassword:
+  S3URI:
     Type: String
-    Description: Input your password of SAP Hana, if you choose true.
+    Description: 'If false, input the S3 URI, example: s3://bucket/.'
 
-  ARNSecretsManager:
+  RouteTable:
     Type: String
-    Description: 'Input the ARN of Secrets Manager only if you checked the option sign as false.'
+    Description: 'Only write the Route Table if the option above is yes, if you want to know more about Route Tables, visit the link: https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html'
+
+  InboundS3:
+    Type: String
+    Description: The bucket must contain the files that Athena will query, input the bucket address, eg s3://bucket/
 
 # Conditions are the decision parameters of the template.
 
 Conditions:
-  CreationVCPEndpointSelected: !Equals [!Ref CreationVCPEndpoint, true]
-  CreationSecretsManagerSelected: !Equals  [!Ref CreationSecretsManager, true]
+  CreationVCPEndpointExecuteAPI: !Equals [!Ref CreationVCPEndpointExecuteAPI, true]
+  CreationVCPEndpointS3: !Equals [!Ref CreationVCPEndpointExecuteS3, true]
+  CreationS3Bucket: !Equals [!Ref BucketS3, true]
 
 Resources:
+
+  GlueIAM:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: !Sub ${Name}-gluepolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
 
 # LambdaIAM (permission) and LambdaFunction are part of the creation of Lambda.
 
@@ -150,18 +203,26 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
+        Version: "2012-10-17"
         Statement:
-          - Action: 'sts:AssumeRole'
-            Effect: Allow
+          -
+            Effect: "Allow"
             Principal:
-              Service: lambda.amazonaws.com
-        Version: 2012-10-17
-      ManagedPolicyArns:
-        - !Join 
-          - ''
-          - - 'arn:'
-            - !Ref 'AWS::Partition'
-            - ':iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: !Sub ${Name}-lambdapolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -177,15 +238,12 @@ Resources:
       Role: !GetAtt 
         - LambdaIAM
         - Arn
-      Environment:
-        Variables:
-          hana: !If [CreationSecretsManagerSelected, !Ref SecretsManager, !Ref ARNSecretsManager] 
 
 # Creation of VPC Endpoint.
 
-  VPCEndpoint:
+  VPCEndpointExecuteAPI:
     Type: AWS::EC2::VPCEndpoint
-    Condition: CreationVCPEndpointSelected
+    Condition: CreationVCPEndpointExecuteAPI
     Properties:
       ServiceName: !Join
         - ''
@@ -201,6 +259,21 @@ Resources:
       VpcId: 
         Ref: VpcId
 
+  VPCEndpointS3Gateway:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreationVCPEndpointS3
+    Properties:
+      ServiceName: !Join
+        - ''
+        - - com.amazonaws.
+          - !Ref 'AWS::Region'
+          - .s3
+      VpcEndpointType: Gateway
+      VpcId: 
+        Ref: VpcId
+      RouteTableIds:
+        - !Ref RouteTable
+
 # APIGateway, APIGatewayResource, APIGatewayDeploy, APIGatewayStage, APIGatewayMethod are the components to create the API Gateway.
 
   APIGateway:
@@ -211,7 +284,7 @@ Resources:
         Types:
           - PRIVATE
         VpcEndpointIds:
-          - !If [CreationVCPEndpointSelected, !Ref VPCEndpoint, !Ref IDVPCEndpoint]      
+          - !If [CreationVCPEndpointExecuteAPI, !Ref VPCEndpointExecuteAPI, !Ref IDVPCEndpoint]      
       Policy:
         Statement:
           - Action: 'execute-api:Invoke'
@@ -300,12 +373,40 @@ Resources:
               - Arn
             - /invocations
 
-# Creation of Secrets Manager.
+# S3 bucket creation.
 
-  SecretsManager:
-    Type: AWS::SecretsManager::Secret
-    Condition: CreationSecretsManagerSelected
+  S3:
+    Type: AWS::S3::Bucket
+    Condition: CreationS3Bucket
+    Properties:
+      BucketName: !If [CreationS3Bucket, !Ref NameBucketS3, !Ref AWS::NoValue]  
+
+# Creation of Glue database and crawler.
+
+  Database:
+    Type: AWS::Glue::Database
+    Properties:
+      DatabaseInput:
+        Name: !Ref Name
+      CatalogId: !Ref AWS::AccountId
+
+  Crawler:
+    Type: AWS::Glue::Crawler
     Properties:
       Name: !Ref Name
-      Description: "Secret for Hana"
-      SecretString: !Sub '{"address":"by-dcdc2h01.de.bayer.cnb","port":"30047","username": "${SecretUser}","password": "${SecretPassword}"}'
+      Role: !GetAtt GlueIAM.Arn
+      DatabaseName: !Ref Database
+      Targets:
+        S3Targets:
+          - Path: !Ref InboundS3 
+
+# Creating data output for Athena.
+
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Ref Name
+      State: ENABLED
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !If [CreationS3Bucket, !Join ["", [s3://, !Ref S3]], !Ref S3URI]

@@ -38,6 +38,7 @@ Metadata:
           default: "RDS"
         Parameters:
           - EngineVersion
+          - MasterUsername
           - MasterUserPassword
 
     ParameterLabels:
@@ -61,6 +62,8 @@ Metadata:
         default: "VPCE for Resource Policy"
       EngineVersion:
         default: "Engine Version for RDS"
+      MasterUsername:
+        default: "Username for RDS"
       MasterUserPassword:
         default: "Password for RDS"
       Name:
@@ -73,6 +76,8 @@ Parameters:
   Name:
     Description: "This will be the name of your API Gateway, Lambda and RDS. First character must be a letter. Can't contain two consecutive hyphens. Can't end with a hyphen."
     Type: String
+    AllowedPattern: ^[a-z0-9\-\.]*$
+    ConstraintDescription: "RDS names can consist only of lowercase letters, numbers, dots (.), hyphens (-) and must begin and end with a letter or number."
 
   LambdaRuntime:
     Type: String
@@ -91,8 +96,12 @@ Parameters:
   EngineVersion:
     Description: 'What is your MySQL engine version?'
     Type: String
-    AllowedValues: [5.7, 8.0]
-    Default: 5.7
+    AllowedValues: [5.7]
+
+  MasterUsername:
+    Description: "Input the Database Username"
+    Default: admin
+    Type: String
 
   MasterUserPassword:
     Description: "At least 8 printable ASCII characters. Can't contain any of the following: / (slash), '(single quote), (double quote)."
@@ -117,7 +126,7 @@ Parameters:
 
   IDVPCEndpoint:
     Type: String
-    Description: 'Write the VPCE only if you checked the option sign as false.'
+    Description: 'Write the VPCE only if you checked the option sign as false. To learn more about what a VPC Endpoint is, go to: https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints.html'
 
   ResourcePolicy:
     Type: String

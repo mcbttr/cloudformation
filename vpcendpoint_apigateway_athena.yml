@@ -69,7 +69,7 @@ Parameters:
 
   IDVPCEndpoint:
     Type: String
-    Description: 'Write the VPCE only if you checked the option sign as false.'
+    Description: 'Write the VPCE only if you checked the option sign as false. To learn more about what a VPC Endpoint is, go to: https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints.html'
 
   ResourcePolicy:
     Type: String

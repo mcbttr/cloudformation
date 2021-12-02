@@ -106,7 +106,7 @@ Parameters:
 
   IDVPCEndpoint:
     Type: String
-    Description: 'Write the VPCE only if you checked the option sign as false.'
+    Description: 'Write the VPCE only if you checked the option sign as false. To learn more about what a VPC Endpoint is, go to: https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints.html'
 
   ResourcePolicy:
     Type: String
@@ -120,7 +120,9 @@ Parameters:
 
   NameBucketS3:
     Type: String
-    Description: 'Write the name of Bucket S3 only if you checked the option sign as true.'
+    Description: 'Write the name of Bucket S3 only if you checked the option sign as true. To learn more about Bucket S3 naming rules, visit: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html'
+    AllowedPattern: ^[a-zA-Z0-9\-\.]*$
+    ConstraintDescription: "Bucket names can consist only of lowercase letters, numbers, dots (.), hyphens (-) and must begin and end with a letter or number."
 
 # Conditions are the decision parameters of the template.
 
@@ -136,18 +138,26 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
+        Version: "2012-10-17"
         Statement:
-          - Action: 'sts:AssumeRole'
-            Effect: Allow
+          -
+            Effect: "Allow"
             Principal:
-              Service: lambda.amazonaws.com
-        Version: 2012-10-17
-      ManagedPolicyArns:
-        - !Join 
-          - ''
-          - - 'arn:'
-            - !Ref 'AWS::Partition'
-            - ':iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: !Ref Name
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
 
   LambdaFunction:
     Type: AWS::Lambda::Function

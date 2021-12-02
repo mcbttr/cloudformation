@@ -18,7 +18,6 @@ Metadata:
         Parameters:
           - VpcID
           - SubnetId
-          - SecurityGroup
       -
         Label:
           default: "Glue - Database Inbound Connection"
@@ -47,8 +46,6 @@ Metadata:
         default: "VPC"
       SubnetId:
         default: "Subnet"
-      SecurityGroup:
-        default: "SecurityGroup"
       JDBCString:
         default: "Database connection string"
       JDBCUser:
@@ -76,12 +73,8 @@ Parameters:
     Description: "Choose the VPC"
     Type: AWS::EC2::VPC::Id
   
-  SecurityGroup:
-    Description: 'Choose the Security Group'
-    Type: AWS::EC2::SecurityGroup::Id
-  
   SubnetId:
-    Description: 'Choose the Subnet ID'
+    Description: 'Choose the Subnet ID from the chosen VPC'
     Type: String
   
   JDBCString:  
@@ -99,7 +92,9 @@ Parameters:
 
   NameBucketS3:
     Type: String
-    Description: 'Create a unique name.'
+    Description: 'Write the name of Bucket S3 only if you checked the option sign as true. To learn more about Bucket S3 naming rules, visit: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html'
+    AllowedPattern: ^[a-zA-Z0-9\-\.]*$
+    ConstraintDescription: "Bucket names can consist only of lowercase letters, numbers, dots (.), hyphens (-) and must begin and end with a letter or number."
 
   BucketS3:
     Type: String
@@ -117,7 +112,7 @@ Parameters:
 
   RouteTable:
     Type: String
-    Description: 'Only write the Route Table if the option above is yes.'
+    Description: 'Only write the Route Table if the option above is yes, if you want to know more about Route Tables, visit the link: https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html'
 
 # Conditions are the decision parameters of the template.
 
@@ -154,6 +149,30 @@ Resources:
                 Action: "*"
                 Resource: "*"
 
+# Creation Security Group
+
+  SecurityGroupGlue:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VpcID
+      GroupDescription: Security Group for Glue
+  InboundRule:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !GetAtt SecurityGroupGlue.GroupId
+      IpProtocol: -1
+      FromPort: -1
+      ToPort: -1
+      SourceSecurityGroupId: !GetAtt SecurityGroupGlue.GroupId
+  OutboundRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !GetAtt SecurityGroupGlue.GroupId
+      IpProtocol: -1
+      FromPort: -1
+      ToPort: -1
+      CidrIp: 0.0.0.0/0
+
 # For Glue to connect to S3 it is necessary to have a VPC Endpoint.
 
   VPCEndpoint:
@@ -188,7 +207,7 @@ Resources:
         ConnectionType: 'JDBC'
         PhysicalConnectionRequirements:
           SecurityGroupIdList: 
-            - !Ref SecurityGroup
+            - !GetAtt SecurityGroupGlue.GroupId
           SubnetId: !Ref SubnetId 
         ConnectionProperties: {
           'JDBC_CONNECTION_URL': !Ref JDBCString,
