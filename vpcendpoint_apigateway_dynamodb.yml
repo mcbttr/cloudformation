@@ -9,27 +9,29 @@ Metadata:
     ParameterGroups:
       -
         Label:
-          default: "Name of Resources"
-        Parameters:
-          - Name
-      -
-        Label:
           default: "Network Configuration"
         Parameters:
           - VpcId
           - SubnetIds
-          - SecurityGroupId
+          - SecurityGroupId      
       -
         Label:
           default: "API Gateway"
         Parameters:
+          - NameAPIGateway
           - CreationVCPEndpoint
           - IDVPCEndpoint
           - ResourcePolicy
+      -
+        Label:
+          default: "DynamoDb"
+        Parameters:
+          - CreationDynamoDb
+          - NameNewDynamoDb
 
     ParameterLabels:
-      Name:
-        default: "Name"      
+      NameAPIGateway:
+        default: "Name of API Gateway"      
       VpcId:
         default: "VPC"
       SubnetIds:
@@ -42,13 +44,21 @@ Metadata:
         default: "VPC Endpoint"
       ResourcePolicy:
         default: "VPC Resource Policy"
+      CreationDynamoDb:
+        default: "Do you need to create a DynamoDb table?"
+      NameNewDynamoDb:
+        default: "Input the name of new DynamoDb"
 
 # The Parameters block is the sector where the user places the variables.
 
 Parameters:
-  Name:
+  NameAPIGateway:
     Type: String
-    Description: 'This will be the name of your API Gateway and DynamoDb.'
+    Description: 'This will be the name of your API Gateway.'
+
+  NameNewDynamoDb:
+    Type: String
+    Description: 'If you choose true, this will be the name of your new DynamoDb table.'
 
   VpcId:
     Type: AWS::EC2::VPC::Id
@@ -76,10 +86,16 @@ Parameters:
     Description: 'Input the VPC Endpoint of your origin, Sensedia=vpce-07516d43e5467b5f9'
     Default: 'vpce-07516d43e5467b5f9'
 
+  CreationDynamoDb:
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'True for yes, false for no'
+
 # Conditions are the decision parameters of the template.
 
 Conditions:
   CreationVCPEndpointSelected: !Equals [!Ref CreationVCPEndpoint, true]
+  CreationDynamoDBSelected: !Equals [!Ref CreationDynamoDb, true]
 
 Resources:
   
@@ -98,7 +114,7 @@ Resources:
               Service:
                 - apigateway.amazonaws.com
       Policies:
-        - PolicyName: APIGatewayDynamoDBPolicy
+        - PolicyName: !Sub ${NameAPIGateway}-APIGatewayDynamoDBPolicy
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -110,9 +126,7 @@ Resources:
                   - "dynamodb:GetItem"
                   - "dynamodb:Scan"
                   - "dynamodb:Query"
-                Resource: !Sub
-                  - '${varTableArn}*'
-                  - varTableArn: !GetAtt DynamoDBTable.Arn
+                Resource: "*"
 
 # Creation of VPC Endpoint.
 
@@ -139,7 +153,7 @@ Resources:
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
     Properties:
-      Name: !Ref Name
+      Name: !Ref NameAPIGateway
       EndpointConfiguration:
         Types:
           - PRIVATE
@@ -197,12 +211,13 @@ Resources:
       RestApiId: !Ref ApiGateway
       StageName: dev
 
-# Creation of the DynamoDb table.
+# Creation or no of the DynamoDb table.
 
   DynamoDBTable:
     Type: 'AWS::DynamoDB::Table'
+    Condition: CreationDynamoDBSelected
     Properties:
-      TableName: !Ref Name
+      TableName: !Ref NameNewDynamoDb
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S

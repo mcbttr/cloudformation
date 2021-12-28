@@ -48,7 +48,7 @@ Metadata:
       JDBCPassword1:
         default: "Database Password"
       Schema1:
-        default: "Input schema your DBMS"
+        default: "Path"
       JDBCString2:
         default: "Database connection string"
       JDBCUser2:
@@ -56,16 +56,16 @@ Metadata:
       JDBCPassword2:
         default: "Database Password"
       Schema2:
-        default: "Input schema your DBMS"
+        default: "Path"
 
 Parameters:
 
   VpcID:
-    Description: "Select the VPC ID for the VPC endpoint."
+    Description: "Choose the VPC"
     Type: AWS::EC2::VPC::Id
-  
+
   SubnetId:
-    Description: 'Choose the Subnet ID from the chosen VPC'
+    Description: 'Choose the Subnet ID'
     Type: String
 
   GlueService1:
@@ -88,9 +88,8 @@ Parameters:
     Type: String
 
   Schema1:
-    Description: 'Input your path'
+    Description: 'Input name path of your DBMS'
     Type: String
-    Default: MyDatabase/%
 
   JDBCString2:  
     Description: 'Input the JDBC String'
@@ -106,9 +105,8 @@ Parameters:
     Type: String
 
   Schema2:
-    Description: 'Input your path'
+    Description: 'Input name path of your DBMS'
     Type: String
-    Default: MyDatabase/%
 
 Resources:
 
@@ -140,29 +138,31 @@ Resources:
                 Action: "*"
                 Resource: "*"
 
-# Creation Security Group
+# Security Group of Glue
 
-  SecurityGroupGlue:
-    Type: 'AWS::EC2::SecurityGroup'
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      VpcId: !Ref VpcID
       GroupDescription: Security Group for Glue
+      VpcId: !Ref VpcID
+  
   InboundRule:
-    Type: 'AWS::EC2::SecurityGroupIngress'
+    Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !GetAtt SecurityGroupGlue.GroupId
       IpProtocol: -1
       FromPort: -1
       ToPort: -1
-      SourceSecurityGroupId: !GetAtt SecurityGroupGlue.GroupId
+      SourceSecurityGroupId: !GetAtt SecurityGroup.GroupId
+      GroupId: !GetAtt SecurityGroup.GroupId
+      
   OutboundRule:
     Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !GetAtt SecurityGroupGlue.GroupId
+    Properties:    
       IpProtocol: -1
       FromPort: -1
       ToPort: -1
       CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt SecurityGroup.GroupId
 
 # Database, Connections and Crawler are the components for creating Glue.
 
@@ -188,7 +188,7 @@ Resources:
         ConnectionType: 'JDBC'
         PhysicalConnectionRequirements:
           SecurityGroupIdList: 
-            - !GetAtt SecurityGroupGlue.GroupId
+            - !GetAtt SecurityGroup.GroupId
           SubnetId: !Ref SubnetId 
         ConnectionProperties: {
           'JDBC_CONNECTION_URL': !Ref JDBCString1,
@@ -206,7 +206,7 @@ Resources:
         ConnectionType: 'JDBC'
         PhysicalConnectionRequirements:
           SecurityGroupIdList: 
-            - !GetAtt SecurityGroupGlue.GroupId
+            - !GetAtt SecurityGroup.GroupId
           SubnetId: !Ref SubnetId 
         ConnectionProperties: {
           'JDBC_CONNECTION_URL': !Ref JDBCString2,

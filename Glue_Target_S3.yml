@@ -9,11 +9,6 @@ Metadata:
     ParameterGroups:
       -
         Label:
-          default: "Name"
-        Parameters:
-          - GlueService
-      -
-        Label:
           default: "Glue - Network Configuration"
         Parameters:
           - VpcID
@@ -22,9 +17,11 @@ Metadata:
         Label:
           default: "Glue - Database Inbound Connection"
         Parameters:
+          - GlueRDS
           - JDBCString
           - JDBCUser
           - JDBCPassword
+          - Schema
       -
         Label:
           default: "S3 - VPC Endpoint"
@@ -35,13 +32,16 @@ Metadata:
         Label:
           default: "S3 - Outbound connection"
         Parameters:
+          - GlueS3
           - BucketS3
           - NameBucketS3
           - ExistNameBucketS3
         
     ParameterLabels:
-      GlueService:
-        default: "Enter your Glue's name"
+      GlueRDS:
+        default: "Choose a name for the Database and Crawler that will be part of Database"
+      GlueS3:
+        default: "Choose a name for the Database and Crawler that will be part of S3"
       VpcID:
         default: "VPC"
       SubnetId:
@@ -62,19 +62,26 @@ Metadata:
         default: "Do you want to create a VPC Endpoint to connect S3 to Glue?"
       RouteTable:
         default: "Route Table"
+      Schema:
+        default: "Path"
 
 # The Parameters block is the sector where the user places the variables.
 
 Parameters:
-  GlueService:
+  GlueRDS:
     Type: String
+    Description: "Input the name that will be on the Database and Crawler for RDS"
+
+  GlueS3:
+    Type: String
+    Description: "Input the name that will be on the Database and Crawler for S3"
 
   VpcID:
     Description: "Choose the VPC"
     Type: AWS::EC2::VPC::Id
   
   SubnetId:
-    Description: 'Choose the Subnet ID from the chosen VPC'
+    Description: 'Choose the Subnet ID'
     Type: String
   
   JDBCString:  
@@ -92,9 +99,7 @@ Parameters:
 
   NameBucketS3:
     Type: String
-    Description: 'Write the name of Bucket S3 only if you checked the option sign as true. To learn more about Bucket S3 naming rules, visit: https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html'
-    AllowedPattern: ^[a-zA-Z0-9\-\.]*$
-    ConstraintDescription: "Bucket names can consist only of lowercase letters, numbers, dots (.), hyphens (-) and must begin and end with a letter or number."
+    Description: 'Create a unique name.'
 
   BucketS3:
     Type: String
@@ -112,7 +117,11 @@ Parameters:
 
   RouteTable:
     Type: String
-    Description: 'Only write the Route Table if the option above is yes, if you want to know more about Route Tables, visit the link: https://docs.aws.amazon.com/vpc/latest/userguide/VPC_Route_Tables.html'
+    Description: 'Only write the Route Table if the option above is yes.'
+
+  Schema:
+    Type: String
+    Description: 'Input name path of your DBMS'
 
 # Conditions are the decision parameters of the template.
 
@@ -140,7 +149,7 @@ Resources:
       Path: "/"
       Policies:
         -
-          PolicyName: !Ref GlueService
+          PolicyName: !Ref GlueRDS
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -149,29 +158,31 @@ Resources:
                 Action: "*"
                 Resource: "*"
 
-# Creation Security Group
+# Security Group of Glue
 
-  SecurityGroupGlue:
-    Type: 'AWS::EC2::SecurityGroup'
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      VpcId: !Ref VpcID
       GroupDescription: Security Group for Glue
+      VpcId: !Ref VpcID
+  
   InboundRule:
-    Type: 'AWS::EC2::SecurityGroupIngress'
+    Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !GetAtt SecurityGroupGlue.GroupId
       IpProtocol: -1
       FromPort: -1
       ToPort: -1
-      SourceSecurityGroupId: !GetAtt SecurityGroupGlue.GroupId
+      SourceSecurityGroupId: !GetAtt SecurityGroup.GroupId
+      GroupId: !GetAtt SecurityGroup.GroupId
+      
   OutboundRule:
     Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !GetAtt SecurityGroupGlue.GroupId
+    Properties:    
       IpProtocol: -1
       FromPort: -1
       ToPort: -1
       CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt SecurityGroup.GroupId
 
 # For Glue to connect to S3 it is necessary to have a VPC Endpoint.
 
@@ -192,11 +203,18 @@ Resources:
 
 # Database, Connections and Crawler are the components for creating Glue.
 
-  Database:
+  DatabaseRDS:
     Type: AWS::Glue::Database
     Properties:
       DatabaseInput:
-        Name: !Ref GlueService
+        Name: !Ref GlueRDS
+      CatalogId: !Ref AWS::AccountId
+
+  DatabaseS3:
+    Type: AWS::Glue::Database
+    Properties:
+      DatabaseInput:
+        Name: !Ref GlueS3
       CatalogId: !Ref AWS::AccountId
 
   Connections:
@@ -207,7 +225,7 @@ Resources:
         ConnectionType: 'JDBC'
         PhysicalConnectionRequirements:
           SecurityGroupIdList: 
-            - !GetAtt SecurityGroupGlue.GroupId
+            - !GetAtt SecurityGroup.GroupId
           SubnetId: !Ref SubnetId 
         ConnectionProperties: {
           'JDBC_CONNECTION_URL': !Ref JDBCString,
@@ -215,17 +233,29 @@ Resources:
           'PASSWORD': !Ref JDBCPassword,
           'JDBC_ENFORCE_SSL': false
         }
-        Name: !Ref GlueService
+        Name: !Ref GlueRDS
  
-  Crawler:
+  CrawlerRDS:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Ref GlueService
+      Name: !Ref GlueRDS
       Role: !GetAtt IAM.Arn
-      DatabaseName: !Ref Database
+      DatabaseName: !Ref DatabaseRDS
+      Targets:
+        JdbcTargets:
+          - ConnectionName: !Ref GlueRDS
+            Path: !Ref Schema
+
+  CrawlerS3:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Ref GlueS3
+      Role: !GetAtt IAM.Arn
+      DatabaseName: !Ref DatabaseS3
       Targets:
         S3Targets:
-          - Path: !If [CreationS3Bucket, !Ref NameBucketS3, !Ref ExistNameBucketS3] 
+          - ConnectionName: !Ref GlueS3
+            Path: !If [CreationS3Bucket, !Ref NameBucketS3, !Ref ExistNameBucketS3] 
 
 # Creation or not of bucket S3.
 

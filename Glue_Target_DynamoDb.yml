@@ -9,11 +9,6 @@ Metadata:
     ParameterGroups:
       -
         Label:
-          default: "Name"
-        Parameters:
-          - GlueService
-      -
-        Label:
           default: "Glue - Network Configuration"
         Parameters:
           - VpcID
@@ -22,20 +17,26 @@ Metadata:
         Label:
           default: "Glue - Database Inbound Connection"
         Parameters:
+          - GlueService
           - JDBCString
           - JDBCUser
           - JDBCPassword
+          - Schema
       -  
         Label:
           default: "DynamoDB - Outbound connection"
         Parameters:
           - DynamoDB
-          - NameDynamoDB
-          - DynamoDBExist  
+          - VPCEDynamoDB
+          - VPCES3
+          - RouteTable
+          - NameGlueDynamoDB
+          - NewDynamoDB
+          - ExistDynamoDB
         
     ParameterLabels:
       GlueService:
-        default: "Enter your Glue's name"
+        default: "Choose a name for the Database and Crawler that will be part of Database"
       VpcID:
         default: "VPC"
       SubnetId:
@@ -47,11 +48,21 @@ Metadata:
       JDBCPassword:
         default: "Database Password" 
       DynamoDB:
-        default: "Do you want to create a DynamoDB table?"
-      NameDynamoDB:
-        default: "Type the name of your new DynamoDb table"
-      DynamoDBExist:
-        default: "Type the name of the existing DynamoDB table"      
+        default: "Do you want to create a DynamoDB table?" 
+      VPCEDynamoDB:
+        default: "Do you want to create a VPC Endpoint of DynamoDb type Gateway"
+      VPCES3:
+        default: "Do you want to create a VPC Endpoint of S3 type Gateway"
+      Schema:
+        default: "Path"
+      NewDynamoDB:
+        default: "What is the name of the new DynamoDb table that will be created?"
+      ExistDynamoDB:
+        default: "What is the name of the existing DynamoDb table?"  
+      NameGlueDynamoDB:
+        default: "Choose a name for the Database and Crawler that will be part of DynamoDb"
+      RouteTable:
+        default: "Route Table"
 
 # The Parameters block is the sector where the user places the variables.
 
@@ -60,11 +71,11 @@ Parameters:
     Type: String
 
   VpcID:
-    Description: "Select the VPC ID for the VPC endpoint."
+    Description: "Choose the VPC"
     Type: AWS::EC2::VPC::Id
-  
+
   SubnetId:
-    Description: 'Choose the Subnet ID from the chosen VPC'
+    Description: 'Choose the Subnet ID'
     Type: String
   
   JDBCString:  
@@ -85,17 +96,42 @@ Parameters:
     AllowedValues: [true, false]
     Description: "Select true for yes or false for no."
 
-  NameDynamoDB:
+  VPCEDynamoDB:
     Type: String
-    Description: 'Type the name of your new table, between 3 and 255 characters, containing only letters, numbers, underscores (_), hyphens (-), and periods (.).'
-    AllowedPattern: ^[a-zA-Z0-9\-\.\_]*$
+    AllowedValues: [true, false]
+    Description: "Select true for yes or false for no."
 
-  DynamoDBExist:
+  VPCES3:
     Type: String
-    Description: 'Type the name of the existing table.'
+    AllowedValues: [true, false]
+    Description: "Select true for yes or false for no."
+
+  NameGlueDynamoDB:
+    Type: String
+    Description: "Input the name that will be on the Database and Crawler for DynamoDb"
+  
+  NewDynamoDB:
+    Type: String
+    Description: "If the chosen option is true, input the name of your new DynamoDb table"
+
+  ExistDynamoDB:
+    Type: String
+    Description: "If the chosen option is false, input the name of the existing DynamoDb table."
+
+  Schema:
+    Type: String
+    Description: 'Input name path of your DBMS'
+
+  RouteTable:
+    Type: String
+    Description: 'Input the route table only if you want to create the VPC Endpoints.'
+
+# Conditions are the decision parameters of the template.
 
 Conditions:
   CreationDynamoDbSeletected: !Equals [!Ref DynamoDB, true]
+  CreationVPCEDynamoDBSelected: !Equals [!Ref VPCEDynamoDB, true]
+  CreationVPCES3Selected: !Equals [!Ref VPCES3, true]
 
 Resources:
 
@@ -126,37 +162,78 @@ Resources:
                 Action: "*"
                 Resource: "*"
 
-# Creation Security Group
+# For Glue to connect to DynamoDb it is necessary to have two VPC Endpoint.
 
-  SecurityGroupGlue:
-    Type: 'AWS::EC2::SecurityGroup'
+  VPCEndpointS3:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreationVPCES3Selected
     Properties:
-      VpcId: !Ref VpcID
+      ServiceName: !Join
+        - ''
+        - - com.amazonaws.
+          - !Ref 'AWS::Region'
+          - .s3
+      VpcEndpointType: Gateway
+      VpcId: 
+        Ref: VpcID
+      RouteTableIds:
+        - !Ref RouteTable
+
+  VPCEndpointDynamoDb:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreationVPCEDynamoDBSelected
+    Properties:
+      ServiceName: !Join
+        - ''
+        - - com.amazonaws.
+          - !Ref 'AWS::Region'
+          - .dynamodb
+      VpcEndpointType: Gateway
+      VpcId: 
+        Ref: VpcID
+      RouteTableIds:
+        - !Ref RouteTable
+
+# Security Group of Glue
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
       GroupDescription: Security Group for Glue
+      VpcId: !Ref VpcID
+  
   InboundRule:
-    Type: 'AWS::EC2::SecurityGroupIngress'
+    Type: AWS::EC2::SecurityGroupIngress
     Properties:
-      GroupId: !GetAtt SecurityGroupGlue.GroupId
       IpProtocol: -1
       FromPort: -1
       ToPort: -1
-      SourceSecurityGroupId: !GetAtt SecurityGroupGlue.GroupId
+      SourceSecurityGroupId: !GetAtt SecurityGroup.GroupId
+      GroupId: !GetAtt SecurityGroup.GroupId
+      
   OutboundRule:
     Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      GroupId: !GetAtt SecurityGroupGlue.GroupId
+    Properties:    
       IpProtocol: -1
       FromPort: -1
       ToPort: -1
       CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt SecurityGroup.GroupId
 
 # Database, Connections and Crawler are the components for creating Glue.
 
-  Database:
+  DatabaseRDS:
     Type: AWS::Glue::Database
     Properties:
       DatabaseInput:
         Name: !Ref GlueService
+      CatalogId: !Ref AWS::AccountId
+
+  DatabaseDynamoDb:
+    Type: AWS::Glue::Database
+    Properties:
+      DatabaseInput:
+        Name: !Ref NameGlueDynamoDB
       CatalogId: !Ref AWS::AccountId
 
   Connections:
@@ -167,7 +244,7 @@ Resources:
         ConnectionType: 'JDBC'
         PhysicalConnectionRequirements:
           SecurityGroupIdList: 
-            - !GetAtt SecurityGroupGlue.GroupId
+            - !GetAtt SecurityGroup.GroupId
           SubnetId: !Ref SubnetId 
         ConnectionProperties: {
           'JDBC_CONNECTION_URL': !Ref JDBCString,
@@ -177,15 +254,26 @@ Resources:
         }
         Name: !Ref GlueService
  
-  Crawler:
+  CrawlerRDS:
     Type: AWS::Glue::Crawler
     Properties:
       Name: !Ref GlueService
       Role: !GetAtt IAM.Arn
-      DatabaseName: !Ref Database
+      DatabaseName: !Ref DatabaseRDS
+      Targets:
+        JdbcTargets:
+          - ConnectionName: !Ref GlueService
+            Path: !Ref Schema
+
+  CrawlerDynamoDb:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Ref NameGlueDynamoDB
+      Role: !GetAtt IAM.Arn
+      DatabaseName: !Ref DatabaseDynamoDb
       Targets:
         DynamoDBTargets:
-          - Path: !If [CreationDynamoDbSeletected, !Ref NameDynamoDB, !Ref DynamoDBExist]
+          - Path: !If [CreationDynamoDbSeletected, !Ref NewDynamoDB, !Ref ExistDynamoDB]
 
 # Creation or not DynamoDB Table.
 
@@ -193,7 +281,7 @@ Resources:
     Type: 'AWS::DynamoDB::Table'
     Condition: CreationDynamoDbSeletected
     Properties:
-      TableName: !Ref GlueService
+      TableName: !Ref NewDynamoDB
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S

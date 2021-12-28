@@ -1,0 +1,299 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Este template cria um Replication Instance, Endpoint Source e Endpoint Target.
+
+# Interface para preenchimento de dados do usuario.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -  
+        Label:
+          default: "Caso voce provisione um destes recursos: Replication Instance, Endpoints e/ou Subnet Groups DMS, informe um nome para eles"
+        Parameters: 
+          - Name 
+      -
+        Label: 
+          default: Configuracao do Replication Settings
+        Parameters: 
+          - CreationReplicationInstance
+          - VPCID
+          - SubnetIds
+          - IPIngress
+          - SGPort
+          - InstancesReplicationInstance
+          - ListEngineVersions
+          - StorageInstance
+      -
+        Label:
+          default: Configuracao do Endpoint de Origem (Source)
+        Parameters: 
+          - CreationSourceEndpoint
+          - EngineNameSource
+          - ServerNameSource
+          - PortSource
+          - UsernameSource
+          - PasswordSource
+          - DatabaseNameSource
+      -
+        Label:
+          default: Configuracao do Endpoint de Destino (Target)
+        Parameters: 
+          - CreationTargetEndpoint
+          - EngineNameTarget
+          - ServerNameTarget
+          - PortTarget
+          - UsernameTarget
+          - PasswordTarget
+          - DatabaseNameTarget
+
+    ParameterLabels:
+      Name:
+        default: Insira o nome dos recursos que serao provisionados.
+      IPIngress:
+        default: Para a configuracao do Security Group insira o IP do SGBD de origem (source) da sua VPC.
+      SGPort:
+        default: Para a configuracao do Security Group, qual a porta do SGBD de origem?
+      VPCID: 
+        default: Insira a sua VPC.
+      SubnetIds:
+        default: Informe as subnets referente a VPC escolhida.
+      CreationReplicationInstance: 
+        default: Voce quer criar um Replication Instance?
+      InstancesReplicationInstance:
+        default: Qual sera o tipo da instancia que sera usada?
+      ListEngineVersions:
+        default: Qual a engine que voce quer usar no Replication Instance?
+      StorageInstance:
+        default: Quanto de disco (Gb) sera provisionado no seu Replication Instance?
+      CreationSourceEndpoint: 
+        default: Voce quer criar um Source Endpoint?
+      EngineNameSource:
+        default: Qual e o SGBD de origem?
+      ServerNameSource:
+        default: Informe o Hostnane ou IP do Banco de Dados de origem, se este SGBD for um RDS coloque o endereco de Endpoint.
+      PortSource:
+        default: Qual e a porta do SGBD de origem?
+      UsernameSource:
+        default: Qual e o username do SGBD de origem?
+      PasswordSource:
+        default: Informe a senha do SGBD de origem.
+      DatabaseNameSource:
+        default: Qual e o Database Name do SGBD de origem?
+      CreationTargetEndpoint: 
+        default: Voce quer criar um Target Endpoint?
+      EngineNameTarget:
+        default: Qual e o SGBD de destino?
+      ServerNameTarget:
+        default: Informe o Endpoint do RDS destino.
+      PortTarget:
+        default: Qual e a porta do SGBD de destino?
+      UsernameTarget:
+        default: Qual e o username do SGBD de destino?
+      PasswordTarget:
+        default: Informe a senha do SGBD de destino.
+      DatabaseNameTarget:
+        default: Qual e o Database Name do SGBD de destino?
+
+Parameters:
+
+# Parametro de nomes para o Replication Instance, Endpoints e Subnet Groups DMS
+
+  Name:
+    Type: String
+    AllowedPattern: ^$|[a-z0-9\-]*$
+    ConstraintDescription: "Permitido apenas letras minusculas, numeros e hifen."
+
+# Parametros para o Subnet Group e Security Group
+
+  VPCID:
+    Type: AWS::EC2::VPC::Id
+  
+  SubnetIds: 
+    Type: List<AWS::EC2::Subnet::Id>
+
+# Parametros para o Security Group
+
+  IPIngress:
+    Type: String
+    Description: "Exemplo: 10.128.0.0/32"
+
+  SGPort:
+    Type: String
+
+# Parametros para o Replication Instance
+
+  InstancesReplicationInstance:
+    Type: String
+    AllowedValues: [dms.t2.micro, dms.t2.small, dms.t2.medium, dms.t2.large, dms.t3.micro, dms.t3.small, dms.t3.medium, dms.t3.large, dms.x4.large, dms.c4.xlarge, dms.c4.2xlarge, dms.c4.xlarge, dms.c5.large, dms.c5.xlarge, dms.c5.2xlarge, dms.c5.4xlarge, dms.c5.9xlarge, dms.c5.12xlarge, dms.c5.18xlarge, dms.c5.24xlarge, dms.r4.large, dms.r4.xlarge, dms.r4.2xlarge, dms.r4.4xlarge, dms.r4.8xlarge, dms.r5.large, dms.r5.xlarge, dms.r5.2xlarge, dms.r5.4xlarge, dms.r5.8xlarge, dms.r5.12xlarge, dms.r5.16xlarge, dms.r5.24xlarge,]
+    Description: "Caso voce queira saber mais sobre a capacidade da instancias, acesse este link: https://docs.aws.amazon.com/dms/latest/userguide/CHAP_ReplicationInstance.Types.html"
+    Default: dms.t2.micro
+
+  ListEngineVersions:
+    Type: String
+    AllowedValues: [3.4.6, 3.4.5, 3.4.4, 3.4.3, 3.4.2, 3.3.4]
+    Default: 3.4.6
+
+  StorageInstance:
+    Type: String  
+
+# Parametros para o Source Endpoint
+
+  EngineNameSource:
+    Type: String
+    AllowedValues: [aurora, aurora-postgresqlmysql, mariadb, mysql, postgres, sqlserver, oracle]
+    Description: aurora = MySQL, aurora-postgresqlmysql = Postgres
+    Default: aurora
+
+  ServerNameSource:
+    Type: String
+
+  PortSource:
+    Type: String
+
+  UsernameSource:
+    Type: String
+  
+  PasswordSource:
+    Type: String
+
+  DatabaseNameSource:
+    Type: String
+    Description: Se o seu Banco de Dados de origem for MySQL deixe esse campo em branco
+
+# Parametros para o Target Endpoint
+
+  EngineNameTarget:
+    Type: String
+    AllowedValues: [aurora, aurora-postgresqlmysql, mariadb, mysql, postgres, sqlserver, oracle]
+    Description: aurora = MySQL, aurora-postgresqlmysql = Postgres
+    Default: aurora
+
+  ServerNameTarget:
+    Type: String
+
+  PortTarget:
+    Type: String
+
+  UsernameTarget:
+    Type: String
+
+  PasswordTarget:
+    Type: String
+
+  DatabaseNameTarget:
+    Type: String
+    Description: Se o seu Banco de Dados de destino for MySQL deixe esse campo em branco
+
+# Parametros de condicao de criacao dos recursos
+
+  CreationReplicationInstance:
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'Se voce quiser criar um Replication Instance escolha true, se nao quiser escolha false, caso escolha false deixe os demais campos em branco'
+    Default: true  
+  
+  CreationSourceEndpoint: 
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'Se voce quiser criar um Source Endpoint escolha true, se nao quiser escolha false, caso escolha false deixe os demais campos em branco'
+    Default: true
+
+  CreationTargetEndpoint: 
+    Type: String
+    AllowedValues: [true, false]
+    Description: 'Se voce quiser criar o Target Endpoint escolha true, se nao quiser escolha false, caso escolha false deixe os demais campos branco'
+    Default: true
+
+# Condicoes que indicam qual recurso sera criado
+
+Conditions:
+
+  CreationReplicationInstanceSelected: !Equals [!Ref CreationReplicationInstance, true]
+  CreationSourceEndpointSelected: !Equals [!Ref CreationSourceEndpoint, true]
+  CreationTargetEndpointSelected: !Equals [!Ref CreationTargetEndpoint, true]
+
+Resources:
+
+# Criacao do Security Group para o DMS
+
+  SecurityGroupDMS:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreationReplicationInstanceSelected
+    Properties:
+      GroupDescription: Security Group para o DMS
+      VpcId: !Ref VPCID
+
+  InboundRuleDMS:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: CreationReplicationInstanceSelected
+    Properties:
+      IpProtocol: tcp
+      FromPort: !Ref SGPort
+      ToPort: !Ref SGPort
+      CidrIp: !Ref IPIngress
+      GroupId: !GetAtt SecurityGroupDMS.GroupId
+      
+  OutboundRuleDMS:
+    Type: AWS::EC2::SecurityGroupEgress
+    Condition: CreationReplicationInstanceSelected
+    Properties:    
+      IpProtocol: -1
+      FromPort: -1
+      ToPort: -1
+      CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt SecurityGroupDMS.GroupId
+
+# Criacao do Subnet Group para o DMS
+
+  DMSSubnetGroup:
+    Type: AWS::DMS::ReplicationSubnetGroup
+    Condition: CreationReplicationInstanceSelected
+    Properties:
+      ReplicationSubnetGroupIdentifier: !Ref Name
+      ReplicationSubnetGroupDescription: !Ref Name
+      SubnetIds: !Ref SubnetIds
+
+# Criacao do Replication Instance
+
+  ReplicationInstance:
+    Type: AWS::DMS::ReplicationInstance
+    Condition: CreationReplicationInstanceSelected
+    Properties:
+      ReplicationInstanceIdentifier: !Ref Name
+      ReplicationInstanceClass: !Ref InstancesReplicationInstance
+      ReplicationSubnetGroupIdentifier: !Ref DMSSubnetGroup
+      EngineVersion: !Ref ListEngineVersions
+      AllocatedStorage: !Ref StorageInstance
+      MultiAZ: false
+      PubliclyAccessible: false
+      VpcSecurityGroupIds:
+        - !GetAtt SecurityGroupDMS.GroupId
+
+# Criacao dos Endpoints Source e Target
+
+  SourceEndpoint:
+    Type: AWS::DMS::Endpoint
+    Condition: CreationSourceEndpointSelected
+    Properties:
+      EndpointType: source
+      EndpointIdentifier: !Sub source-${Name}
+      EngineName: !Ref EngineNameSource
+      ServerName: !Ref ServerNameSource
+      Port: !Ref PortSource
+      Username: !Ref UsernameSource
+      Password: !Ref PasswordSource
+      DatabaseName: !Ref DatabaseNameSource
+
+  TargetEndpoint:
+    Type: AWS::DMS::Endpoint
+    Condition: CreationTargetEndpointSelected
+    Properties:
+      EndpointType: target
+      EndpointIdentifier: !Sub target-${Name}
+      EngineName: !Ref EngineNameTarget
+      ServerName: !Ref ServerNameTarget
+      Port: !Ref PortTarget
+      Username: !Ref UsernameTarget
+      Password: !Ref PasswordTarget
+      DatabaseName: !Ref DatabaseNameTarget
