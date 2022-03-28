@@ -1,0 +1,130 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: A preencher.
+
+Metadata:
+
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "Lambda"
+        Parameters:
+          - NameLambda
+          - URLTarget
+          - RequestQTD
+          - ConcurrencyQTD
+          - TimeQTD
+          - FileS3
+      -
+        Label:
+          default: "S3"
+        Parameters:
+          - NameBucketS3
+    
+    ParameterLabels:
+      NameLambda:
+        default: What will be the name of your Lambda function?
+      URLTarget:
+        default: Type the URL that will be tested.
+      RequestQTD:
+        default: How many requests will be sent to the destination URL?
+      ConcurrencyQTD:
+        default: What will be the concurrency of requests?
+      TimeQTD:
+        default: How long will the requests last?
+      FileS3:
+        default: Enter the name of the log file.
+      NameBucketS3:
+        default: Type the name of your new bucket.
+
+Parameters:
+  
+  NameLambda:
+    Type: String
+  URLTarget:
+    Type: String
+  RequestQTD:
+    Type: String
+  ConcurrencyQTD:
+    Type: String
+  TimeQTD:
+    Type: String
+  NameBucketS3:
+    Type: String
+  FileS3:
+    Type: String
+
+Resources:
+
+  IAMRoleforLambda:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub Role-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        -
+          PolicyName: !Sub Policy-${AWS::StackName}
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                Resource: !Sub "arn:aws:s3:::${BucketS3}/*"
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref NameLambda
+      Description: "With this function it is possible to invoke URL's and perform stress test"
+      Runtime: python3.9
+      Role: !GetAtt IAMRoleforLambda.Arn
+      Handler: index.lambda_handler
+      Environment:
+        Variables:
+          Target: !Ref URLTarget
+          Request_Quantity: !Ref RequestQTD
+          Concurrency: !Ref ConcurrencyQTD
+          Time: !Ref TimeQTD
+          S3Bucket: !Ref NameBucketS3
+          FileName: !Ref FileS3
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+
+          def lambda_handler(event, context):
+              string = "stress test"
+              encoded_string = string.encode("utf-8")
+
+              bucket_name = os.environ['S3Bucket']
+              file_name = os.environ['FileName']
+              s3_path = "logs/" + file_name
+
+              s3 = boto3.resource("s3")
+              s3.Bucket(bucket_name).put_object(Key=s3_path, Body=encoded_string)
+
+  BucketS3:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref NameBucketS3
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
