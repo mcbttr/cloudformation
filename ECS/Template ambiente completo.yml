@@ -1,0 +1,511 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Este template cria todo o ambiente para a aplicacao, Load Balancer, ECS, Auto Scaling, Monitoracao e DNS.
+
+# OS RECURSOS METADATA E PARAMETER LABELS TRAZEM UMA INTERFACE AMIGAVEL PARA O USUARIO #
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "APLICACAO - PARAMETROS GERAIS"
+        Parameters:
+          - ApplicationName
+          - ApplicationPort
+          - Environment
+          - Envforbilling
+      -
+        Label:
+          default: "DNS"
+        Parameters:
+          - RecordName
+      -
+        Label:
+          default: "ECS - ESTRUTURA BASICA"
+        Parameters:
+          - CreationECSCluster
+          - NameNewECSCluster
+          - NameOldECSCluster
+          - Provider
+          - DesiredContainer
+          - ImageURI
+          - CPUValue
+          - MemoryValue
+      -
+        Label:
+          default: "ECS - VARIAVEL DE AMBIENTE"
+        Parameters:
+          - Key
+          - Value        
+      -
+        Label:
+          default: "ECS - ELASTICIDADE"
+        Parameters:
+          - MaximumCapacity
+          - Target
+          - ScaleIn
+          - ScaleOut
+
+    ParameterLabels:
+      
+      ApplicationName:
+        default: Qual sera o nome para a aplicacao?
+      
+      ApplicationPort:
+        default: Qual sera a porta padrao da aplicacao?
+        
+      Environment:
+        default: Em qual ambiente sera criado?
+
+      Envforbilling:
+        default: Informe novamente o ambiente que sera criado, esse valor sera usado para compor as metricas de billing.
+
+      CreationECSCluster:
+        default: Voce quer criar um novo ECS Cluster?
+
+      NameNewECSCluster:
+        default: Escreva o nome do seu novo ECS Cluster.
+
+      NameOldECSCluster:
+        default: Escreva o nome do ECS Cluster existente.
+      
+      Provider:
+        default: Qual sera o tipo de instancia do ECS Fargate que sera provisionada?
+
+      DesiredContainer:
+        default: Informe o numero minimo de conteineres que sera provisionado no servico.
+
+      ImageURI:
+        default: Insira a URL da imagem que esta no ECR.
+
+      Key:
+        default: Informe a Key que sera usada.
+
+      Value:
+        default: Informe o ARN do Secrets Manager.
+
+      CPUValue:
+        default: Informe a quantidade de CPU que sera utilizada em cada conteiner.
+
+      MemoryValue:
+        default: Informe a quantidade de memoria que sera utilizada em cada conteiner.
+
+      MaximumCapacity:
+        default: Qual sera a capacidade maxima em conteineres que sera executado nesse servico?
+
+      Target:
+        default: A partir de quantas requests a aplicacao acionara a elasticidade?
+
+      ScaleIn:
+        default: Informe o tempo em que o ECS comecara a provisionar mais um conteiner.
+
+      ScaleOut:
+        default: Informe o tempo em que o ECS comecara a desprovisionar os conteineres escalados.
+      
+      RecordName:
+        default: Escreva o nome do registro DNS.
+
+Parameters:
+
+# PARAMETROS PARA O IAC #
+
+  ### PARAMETROS GERAIS ###
+
+  ApplicationName:
+    Type: String
+    AllowedPattern: ^[A-Z\-]*$
+    ConstraintDescription: "Caracteres permitidos: Permitido apenas letras maiusculas e hifen."
+
+  ApplicationPort:
+    Type: String
+    AllowedPattern: ^[0-9]*$
+    ConstraintDescription: "Caracteres permitidos: Permitido apenas numeros."
+
+  Environment:
+    Type: String
+    AllowedValues: [DEV, HLG, PRD]
+    Default: DEV
+
+  Envforbilling:
+    Type: String
+    AllowedValues: [DEV/HLG, PRD]
+    Default: DEV/HLG
+
+  ### PARAMETROS PARA O ECS ###
+
+  NameNewECSCluster:
+    Type: String
+    Description: Preencha esse campo apenas se escolheu a opcao true.
+    AllowedPattern: ^[A-Z\-]*$
+    ConstraintDescription: "Caracteres permitidos: Permitido apenas letras maiusculas e hifen."
+
+  NameOldECSCluster:
+    Type: String
+    Description: Preencha esse campo apenas se escolheu a opcao false.
+
+  CreationECSCluster: 
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+    Description: Se quiser criar escolha true, senao escolha false.
+
+  Provider:
+    Type: String
+    AllowedValues: [FARGATE, FARGATE_SPOT]
+    Default: FARGATE_SPOT
+    Description: "Lembrete: O provider FARGATE_SPOT e uma instancia efemera"
+
+  DesiredContainer:
+    Type: String
+    AllowedValues: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    Default: 1
+
+  CPUValue:
+    Type: String
+    AllowedValues: [256, 512, 1024, 2048, 4096]
+    Description: "Para saber mais sobre qual CPU e memoria inserir no conteiner visite este link: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html"
+    Default: 256
+
+  MemoryValue:
+    Type: String
+    AllowedValues: [512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192]
+    Description: "Para saber mais sobre qual CPU e memoria inserir no conteiner visite este link: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html"
+    Default: 512
+
+  ImageURI:
+    Type: String
+    Description: "O repositorio de imagens esta neste link: https://us-east-1.console.aws.amazon.com/ecr/repositories?region=us-east-1"
+
+  Key:
+    Type: String
+
+  Value:
+    Type: String
+    Description: "O Secrets Manager esta neste link: https://us-east-1.console.aws.amazon.com/secretsmanager/home?region=us-east-1#!/listSecrets/"
+
+  ### PARAMETROS PARA ELASTICIDADE DO ECS ###
+
+  MaximumCapacity:
+    Type: String
+    AllowedValues: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    Default: 2
+
+  ScaleIn:
+    Type: String
+    AllowedValues: [30, 60, 90, 120, 150, 180, 210, 240, 270, 300]
+    Description: Esses valores estao expressos em segundos.
+    Default: 60
+
+  ScaleOut:
+    Type: String
+    AllowedValues: [30, 60, 90, 120, 150, 180, 210, 240, 270, 300]
+    Description: Esses valores estao expressos em segundos.
+    Default: 300
+
+  Target:
+    Type: String
+    Default: 200
+    AllowedPattern: "[0-9]*"
+    ConstraintDescription: "Caracteres permitidos: Permitido apenas numeros."
+
+  ### PARAMETRO PARA REGISTRO DNS ###
+
+  RecordName:
+    Type: String
+    Description: Escreva apenas o nome do registro, nao escreva o nome do dominio.
+    AllowedPattern: ^[a-z\-]*$
+    ConstraintDescription: "Caracteres permitidos: Permitido apenas letras minusculas e hifen."
+
+# CONDICAO PARA CRIACAO OU NAO DE ALGUM RECURSO DENTRO DO SCRIPT #
+
+Conditions:
+  CreationECSClusterSelected: !Equals [!Ref CreationECSCluster, true]
+
+Resources:
+
+# ESTRUTURA LOAD BALANCER #
+
+  ### CRIACAO DE SECURITY GROUP PUBLICO ###
+
+  SGforLoadBalancer:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: vpc-092cf987b17342336
+      GroupDescription: !Sub Security Group para ${ApplicationName}
+      GroupName: !Sub ALB-${ApplicationName}
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ApplicationPort
+          ToPort: !Ref ApplicationPort
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ALB-${ApplicationName}
+
+  ### OS QUATRO RECURSOS ABAIXO SAO A ESTRUTURA DO LOAD BALANCER ###
+
+  TargetGroupforALB:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties: 
+      Name: !Sub TG-${ApplicationName}-${Environment}
+      VpcId: vpc-092cf987b17342336
+      TargetType: ip
+      Port: !Ref ApplicationPort
+      HealthCheckPath: /health
+      Protocol: HTTP
+      Tags:
+        - Key: !Sub ${ApplicationName}
+          Value: !Sub ${Environment}
+        - Key: AMBIENTE
+          Value: !Ref Envforbilling
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ALB-${ApplicationName}-${Environment}
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref SGforLoadBalancer
+      Subnets:
+        - subnet-02e49dfd271d75528
+        - subnet-00678be231ca89696
+        - subnet-0a08497895d567373
+      Tags:
+        - Key: !Sub ${ApplicationName}
+          Value: !Sub ${Environment}
+        - Key: AMBIENTE
+          Value: !Ref Envforbilling
+
+  ListenerHTTPforALB:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: !Ref ApplicationPort
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroupforALB
+
+  ListenerHTTPSforALB:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-east-1:275515532687:certificate/0b5a5d5e-7668-4510-9f88-228f726b080a
+      SslPolicy: ELBSecurityPolicy-2016-08
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroupforALB
+
+# ESTRUTURA DO ECS #
+
+  ### ADICIONANDO SECURITY GROUP DO LOAD BALANCER NO ECS ###
+
+  SGforECS:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: sg-0d59590aba0a47367
+      IpProtocol: tcp
+      FromPort: !Ref ApplicationPort
+      ToPort: !Ref ApplicationPort
+      SourceSecurityGroupId: !Ref SGforLoadBalancer
+
+  ### CRIACAO DAS IAM ROLES PARA FUNCIONAMENTO DO ECS E DO AUTO SCALING ###
+
+  IAMforECSTask:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub RoleECSTask-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ecs-tasks.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: !Sub PolicyECSTask-${AWS::StackName}
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "secretsmanager:ListSecrets"
+                  - "secretsmanager:DescribeSecret"
+                  - "secretsmanager:GetRandomPassword"
+                  - "secretsmanager:GetResourcePolicy"
+                  - "secretsmanager:GetSecretValue"
+                  - "secretsmanager:ListSecretVersionIds"
+                  - "ecr:GetAuthorizationToken"
+                  - "ecr:BatchCheckLayerAvailability"
+                  - "ecr:GetDownloadUrlForLayer"
+                  - "ecr:BatchGetImage"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "*"
+
+  IAMforECSAutoScaling:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub RoleECSAutoScaling-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "application-autoscaling.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: !Sub PolicyECSAutoScaling-${AWS::StackName}
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "ecs:DescribeServices"
+                  - "ecs:UpdateService"
+                  - "cloudwatch:DescribeAlarms"
+                  - "cloudwatch:PutMetricAlarm"
+                  - "cloudwatch:DeleteAlarms"
+                  - "elasticloadbalancing:DescribeLoadBalancers"
+                  - "elasticloadbalancing:DescribeTargetGroups"
+                Resource: "*"
+
+  ### CRIACAO DA ESTRUTURA BASICA DO ECS ###
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Condition: CreationECSClusterSelected
+    Properties:
+      ClusterName: !Ref NameNewECSCluster
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+      Tags:
+        - Key: CLUSTER
+          Value: !Ref NameNewECSCluster
+
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: ListenerHTTPforALB
+    Properties:
+      ServiceName: !Sub ${ApplicationName}-${Environment}
+      Cluster: !If [CreationECSClusterSelected, !Ref ECSCluster, !Ref NameOldECSCluster]
+      DesiredCount: !Ref DesiredContainer
+      TaskDefinition: !Ref ECSTaskDefinition
+      CapacityProviderStrategy:
+        - CapacityProvider: !Ref Provider
+          Weight: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED          
+          SecurityGroups:
+            - sg-0d59590aba0a47367
+          Subnets:
+            - subnet-02e49dfd271d75528
+            - subnet-00678be231ca89696
+            - subnet-0a08497895d567373
+      LoadBalancers:
+        - ContainerName: !Ref ApplicationName
+          ContainerPort: !Ref ApplicationPort
+          TargetGroupArn: !Ref TargetGroupforALB
+
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref ApplicationName
+      NetworkMode: awsvpc
+      Cpu: !Ref CPUValue
+      Memory: !Ref MemoryValue
+      ExecutionRoleArn: !Ref IAMforECSTask
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: !Ref ApplicationName
+          Essential: true
+          Image: !Ref ImageURI
+          PortMappings: 
+            - ContainerPort: !Ref ApplicationPort
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: !Ref 'ApplicationName'
+          Secrets:
+            - Name: !Ref Key
+              ValueFrom: !Ref Value
+
+  ### CRIACAO DA POLITICA DE AUTO SCALING ###
+
+  AutoScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: !Ref MaximumCapacity
+      MinCapacity: !Ref DesiredContainer
+      ResourceId: !Join ["/", [service, !Ref ECSCluster, !GetAtt ECSService.Name]]
+      RoleARN: !GetAtt IAMforECSAutoScaling.Arn
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      
+  AutoScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub AUTOSCALING-${ApplicationName}
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref AutoScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ALBRequestCountPerTarget
+          ResourceLabel: !Join ["/", [!GetAtt ApplicationLoadBalancer.LoadBalancerFullName, !GetAtt TargetGroupforALB.TargetGroupFullName]]
+        ScaleInCooldown: !Ref ScaleIn
+        ScaleOutCooldown: !Ref ScaleOut
+        TargetValue: !Ref Target
+
+# ESTRUTURA DE MONITORACAO #
+
+  ### CRIACAO DO GRUPO DE LOGS DO CLOUDWATCH ###
+
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Join ['-', [ECSLogGroup, !Ref ApplicationName]]
+      RetentionInDays: 14
+
+# CRIACAO DO REGISTRO DNS NO ROUTE53
+
+  Route53:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: Z09280612J4LN77FE225G
+      RecordSets:
+        - Name: !Sub ${RecordName}.dedilly.com
+          Type: A
+          AliasTarget:
+            DNSName: !Join [".", [dualstack, !GetAtt ApplicationLoadBalancer.DNSName]]
+            HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
