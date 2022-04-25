@@ -116,6 +116,7 @@ Parameters:
     Type: String
     AllowedPattern: ^[A-Z\-]*$
     ConstraintDescription: "Caracteres permitidos: Permitido apenas letras maiusculas e hifen."
+    MaxLength: 24
 
   ApplicationPort:
     Type: String
