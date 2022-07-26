@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Criacao de uma Lambda Function para automacao de exportacao de dados para o DynamoDB.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: LAMBDA
+        Parameters:
+          - LambdaName
+      -
+        Label:
+          default: S3
+        Parameters:
+          - BucketName
+
+    ParameterLabels:
+      LambdaName:
+        default: Crie um nome para a Lambda Function    
+      BucketName:
+        default: Crie um S3 Bucket para armazenar a tabela .csv
+
+Parameters:
+
+  LambdaName:
+    Type: String
+
+  BucketName:
+    Type: String  
+
+Resources:
+
+# CRIACAO DO IAM ROLE PARA PERMISSIONAMENTO DA FUNCAO LAMBDA
+
+  IAMLambda:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ROLE-${AWS::StackName}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        -
+          PolicyName: !Sub POLICY-${AWS::StackName}
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:UpdateTable
+                  - logs:CreateLogDelivery
+                  - logs:PutMetricFilter
+                  - logs:CreateLogStream
+                  - logs:GetLogRecord
+                  - logs:DeleteLogGroup
+                  - logs:GetLogEvents
+                  - logs:FilterLogEvents
+                  - logs:GetLogGroupFields
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogStream
+                  - logs:GetLogDelivery
+                  - logs:PutLogEvents
+                Resource: "*"
+
+# CRIACAO DA FUNCAO LAMBDA
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref LambdaName
+      Description: Lambda Function para importar as tabelas do S3 para o DynamoDB
+      Runtime: python3.9
+      Role: !GetAtt IAMLambda.Arn
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          s3_client = boto3.client('s3')
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('teste-gulf')
+          def lambda_handler(event, context):
+              bucket = event['Records'][0]['s3']['bucket']['name']
+              csv_file_name = event['Records'][0]['s3']['object']['key']
+              print(csv_file_name)
+              csv_object = s3_client.get_object(Bucket=bucket,Key=csv_file_name)
+              file_reader = csv_object['Body'].read().decode("utf-8")
+              print(file_reader)
+              results = file_reader.split("\n")
+              results = list(filter(None, results))
+              counter= 0
+              for result in results:
+                  counter+=1
+                  if counter == 1:
+                      continue
+                  results = result.split(",")
+                  table.put_item(Item = {
+                      "entity_id" : str(results[0]).replace('"',''),
+                      "description" : str(results[1]).replace('"',''),
+                      "name" : str(results[2]).replace('"','')
+                  })               
+              return 'success'
+
+# CRIACAO DA TRIGGER DO S3 NO LAMBDA
+
+  PermissionS3toLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub arn:aws:s3:::${BucketName}
+      SourceAccount: !Ref AWS::AccountId
+
+  Bucket:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - PermissionS3toLambda
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true      
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt LambdaFunction.Arn
